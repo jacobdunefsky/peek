@@ -1,5 +1,8 @@
 import json
 
+import backend_import_cfg
+backend_import_cfg.import_expensive_modules = True
+
 import tc_peek_backend as backend
 
 from flask import request, Flask, render_template
