@@ -1,0 +1,454 @@
+{% import 'templates/misc_widgets.html' as misc_widgets %}
+
+{% macro inline_description_form(name) %}
+<div id="{{name}}_wrapper">
+	<div id="{{name}}_placeholder" style="display: none" class="description_placeholder">
+		Click to add a description
+	</div>
+	<div id="{{name}}_value" class="description"></div>
+</div>
+<div id="{{name}}_form" style="display: none">
+	<textarea class="description_input" placeholder="Description" style="flex-grow: 1"></textarea><button id="{{name}}_button">Submit</button>
+</div>
+
+<script>
+
+</script>
+{% endmacro %}
+
+{% macro list_item(id, contents, class='', style='', left_header_col='', right_header_col='') %}
+	<div id="{{id}}" class="{{class}} list_item" style="{{style}}">
+		<details class="list_details">
+			<summary class="clickable" style="display: flex">
+				<span style="flex: 1">{{left_header_col}}</span>
+				<span style="flex: 1; text-align: right; margin-right: 5%">{{right_header_col}}</span>
+			</summary>
+			<input class="id" type="hidden"/>
+			{{ contents }}
+		</details>
+	</div>
+{% endmacro %}
+
+{% macro sae_list_item(sae_info=none) %}
+	{% if sae_info is none %}
+		{% set static_render=false %}
+	{% else %}
+		{% set static_render=true %}
+	{% endif %}
+	{% if static_render %}
+		{% set short_name=sae_info.short_name %}
+	{% else %}
+		{% set short_name = '' %}
+	{% endif %}
+	{% set left_header_col %}
+		<b><span class="short_name">{{short_name}}</span></b>
+	{% endset %}
+
+	{% if not static_render %}
+		{% set right_header_col %}
+			<button onclick="deleteSae(this)">&#10006;</button>
+		{% endset %}
+	{% else %}
+		{% set right_header_col = '' %}
+	{% endif %}
+
+	{% if not static_render %}
+		{% set short_name='' %}
+		{% set name='' %}
+		{% set upstream_type='' %}
+		{% set upstream_path='' %}
+		{% set upstream_hf_repo='' %}
+		{% set input_layer='' %}
+		{% set input_sublayer='' %}
+		{% set output_layer='' %}
+		{% set output_sublayer='' %}
+		{% set num_features='' %}
+	{% else %}
+		{% set name=sae_info.name %}
+		{% set input_layer=sae_info.input_layer.layer %}
+		{% set input_sublayer=sae_info.input_layer.sublayer.name %}
+		{% set output_layer=sae_info.output_layer.layer %}
+		{% set output_sublayer=sae_info.output_layer.sublayer.name %}
+		{% set num_features=sae_info.sae.cfg.num_features %}
+
+		{% set upstream_type_str='' %}
+		{% set upstream_path_str='' %}
+		{% set upstream_hf_repo_str='' %}
+		{% if sae_info.upstreams|length != 0 %}
+			{% set upstream_type = sae_info.upstreams[0].path_type.name %}
+			{% if upstream_type == 'HUGGINGFACE' %}
+				{% set upstream_type_str = 'Huggingface repo' %}
+				{% set upstream_path_str = sae_info.upstreams[0].hf_path %}
+				{% set upstream_hf_repo_str = ' in repo ' + sae_info.upstreams[0].hf_repo_id  %}
+			{% elif upstream_type == 'ABSOLUTE_PATH' %}
+				{% set upstream_type_str = "Local path" %}
+				{% set upstream_path_str = sae_info.upstreams[0].absolute_path %}
+			{% elif upstream_type == 'RELATIVE_PATH' %}
+				{% set upstream_type_str = "Local path" %}
+				{% set upstream_path_str = sae_info.upstreams[0].relative_path %}
+			{% endif %}
+		{% endif %}
+	{% endif %}
+
+	{% set contents %}
+		<p><b>Full name:</b> <span class="name">{{name}}</span></p>
+		<p><b>Upstream origin:</b> <span class="upstream_type">{{upstream_type_str}}</span> at <span class="upstream_path">{{upstream_path_str}}</span><span class="upstream_hf_repo">{{upstream_hf_repo_str}}</span></p>
+		<p><b>Input layer:</b> Layer <span class="input_layer">{{input_layer}}</span> <span class="input_sublayer">{{input_sublayer}}</span></p>	
+		<p><b>Output layer:</b> Layer <span class="output_layer">{{output_layer}}</span> <span class="output_sublayer">{{output_sublayer}}</span></p>	
+		<p><b>Number of features:</b> <span class="num_features">{{num_features}}</span></p>
+	{% endset %}
+
+	{% if not static_render %}
+	 {% set id='saes_list_template' %}
+	 {% set style='display: none' %}
+	{% else %}
+	 {% set id='' %}
+	 {% set style='' %}
+	{% endif %}
+
+	{{ list_item(id, contents, class='saes_list_item', style=style, left_header_col=left_header_col, right_header_col=right_header_col) }}
+
+{% endmacro %}
+
+{% macro prompt_list_item(prompt=none, static_right_header_col='') %}
+	{% if prompt is none %}
+		{% set static_render=false %}
+	{% else %}
+		{% set static_render=true %}
+	{% endif %}
+
+	{% if static_render %}
+		{% set name = prompt.name %}
+	{% else %}
+		{% set name = '' %}
+	{% endif %}
+	{% set left_header_col %}
+		<b><span class="name">{{name}}</span></b>
+	{% endset %}
+
+	{% if not static_render %}
+		{% set right_header_col %}
+			<button onclick="deletePrompt(this)" class="delete_prompt_button">&#10006;</button>
+		{% endset %}
+	{% else %}
+		{% set right_header_col = static_right_header_col %}
+	{% endif %}
+
+	{% if not static_render %}
+		{% set cur_style %}display: none{% endset %}
+	{% else %}
+		{% set cur_style='' %}
+	{% endif %}
+
+	{% set description = '' if not static_render or prompt.description is none else prompt.description %}
+
+	{% if not static_render or description != '' %}
+		{% set description_contents %}
+			<p class="description" style="{{cur_style}}">{{description}}</p>
+		{% endset %}
+	{% else %}
+		{% set description_contents %}
+			<p>No description has been saved for this prompt.</p>
+		{% endset %}
+	{% endif %}
+
+	{% if static_render %}
+		{% set prompt_snippet %}
+			{{prompt.tokens[:10]|join("")}}&#8230;
+		{% endset %}
+	{% else %}
+		{% set prompt_snippet='' %}
+	{% endif %}
+	{% set snippet_contents %}
+		<p class="prompt_snippet" style="{{cur_style}}; font-family: monospace">{{prompt_snippet}}</p>
+	{% endset %}
+
+	{% if not static_render %}
+	 {% set id='prompts_list_template' %}
+	 {% set style='display: none' %}
+	{% else %}
+	 {% set id='' %}
+	 {% set style='' %}
+	{% endif %}
+
+	{{ list_item(id, description_contents + snippet_contents, class='prompts_list_item', style=style, left_header_col=left_header_col, right_header_col=right_header_col) }}
+{% endmacro %}
+
+{% macro feature_lists_list_item(feature_list=none)%}
+	{% if feature_list is none %}
+		{% set static_render=false %}
+	{% else %}
+		{% set static_render=true %}
+	{% endif %}
+
+	{% if static_render %}
+		{% set name = feature_list.name %}
+	{% else %}
+		{% set name = '' %}
+	{% endif %}
+	{% set left_header_col %}
+		<b><span class="name">{{name}}</span></b>
+	{% endset %}
+
+	{% if not static_render %}
+		{% set right_header_col %}
+			<button onclick="copyFeatureList(this)">Duplicate</button>
+			<button onclick="deleteFeatureList(this)" class="delete_feature_list_button">&#10006;</button>
+		{% endset %}
+	{% else %}
+		{% set right_header_col = '' %}
+	{% endif %}
+
+	{% if not static_render or feature_list.description == '' %}
+		{% set desc_style %}display: none;{% endset %}
+	{% else %}
+		{% set desc_style = '' %}
+	{% endif %}
+	{% if not static_render %}
+		{% set description='' %}
+		{% set num_features='' %}
+	{% else %}
+		{% set description=feature_list.description %}
+		{% set num_features=feature_list.dict|length %}
+	{% endif %}
+	{% set contents %}
+		<p class="description" style="{{desc_style}}">{{description}}</p>
+		<p>Number of features: <span class="num_features">{{num_features}}</span></p>
+	{% endset %}
+
+	{% set dynamic_contents='' %}
+	{% if not static_render %}
+		{% set dynamic_contents %}
+			<button onclick="showRenameFeatureListForm(this)">Rename</button>
+			<button onclick="showEditFeatureListDescriptionForm(this)">Edit description</button>
+			<div style="display: none" class="rename_form">
+				New name: <input type="text" class="name"/>
+				<button onclick="renameFeatureList(this)">Submit</button>
+			</div>
+			<div style="display: none" class="edit_description_form">
+				<textarea placeholder="Description" class="description_input"></textarea><br/>
+				<button onclick="editFeatureListDescription(this)">Submit</button>
+			</div>
+		{% endset %}
+	{% endif %}
+
+	{% if not static_render %}
+	 {% set id='feature_lists_list_template' %}
+	 {% set style='display: none' %}
+	{% else %}
+	 {% set id='' %}
+	 {% set style='' %}
+	{% endif %}
+
+	{{ list_item(id, contents+dynamic_contents, class='feature_lists_list_item', style=style, left_header_col=left_header_col, right_header_col=right_header_col) }}
+{% endmacro %}
+
+{% macro prompt_feature_list_item(feature=none, id=none, show_buttons=none, hidden=true)%}
+	{% if feature is none %}
+		{% set static_render=false %}
+	{% else %}
+		{% set static_render=true %}
+	{% endif %}
+
+	{% if show_buttons is none %}
+		{% set show_buttons = not static_render %}
+	{% endif %}
+
+	{% if static_render %}
+		{% set name = feature.name %}
+	{% else %}
+		{% set name = '' %}
+	{% endif %}
+	{% set left_header_col %}
+		<span class="name">{{name}}</span></b>
+	{% endset %}
+
+	{% if not static_render and show_buttons %}
+		{% set right_header_col %}
+			<button class="delete_feature_button">&#10006;</button>
+			<button class="get_activs_button" onclick="getFeatureActivsOnPrompt(this)">Get activs</button>
+		{% endset %}
+	{% else %}
+		{% set right_header_col = '' %}
+	{% endif %}
+
+	{% if not static_render or feature.description == '' or feature.description is none %}
+		{% set desc_style %}display: none;{% endset %}
+	{% else %}
+		{% set desc_style = '' %}
+	{% endif %}
+
+	{% set sae_name='' %} {% set sae_name_style='display: none;' %}
+	{% set feature_idx='' %} {% set feature_idx_style='display: none;' %}
+	{% set attn_head='' %} {% set attn_head_style='display: none;' %}
+	{% set obs_tokens='' %} {% set obs_tokens_style='display: none;' %}
+
+	{% if not static_render %}
+		{% set description='' %}
+		{% set input_layer='' %}
+		{% set input_sublayer='' %}
+		{% set output_layer='' %}
+		{% set output_sublayer='' %}
+		{% set feature_type='' %}
+	{% else %}
+		{% set description=feature.description %}
+		{% set input_layer=feature.input_layer.layer %}
+		{% set input_sublayer=feature.input_layer.sublayer.name %}
+		{% set output_layer=feature.output_layer.layer %}
+		{% set output_sublayer=feature.output_layer.sublayer.name %}
+		{% set feature_type=feature.feature_type.name %}
+
+		{% if feature.feature_idx is not none %}
+			{% set feature_idx = feature.feature_idx %}
+			{% set feature_idx_style='' %}
+		{% endif %}
+		{% if feature.sae_info is not none and feature.sae_info.name is not none %}
+			{% set sae_name = feature.sae_info.name %}
+			{% set sae_name_style='' %}
+		{% endif %}
+		{% if feature.attn_head is not none %}
+			{% set attn_head = feature.attn_head %}
+			{% set attn_head_style='' %}
+		{% endif %}
+		{% if feature.observable_tokens is not none %}
+			{% set obs_tokens %}
+				{% for token_idx in range(feature.observable_tokens|length) %}
+					{% set token = feature.observable_tokens[token_idx] %}
+					{% set weight = feature.observable_weights[token_idx] %}
+					{{weight}}&times; {{ misc_widgets.display_token(token, clickable=false) }}
+					{% if token_idx != feature.observable_tokens|length-1 %}
+						+
+					{% endif %}
+				{% endfor %}
+			{% endset %}
+			{% set obs_tokens_style='' %}
+		{% endif %}
+	{% endif %}
+	
+	{% set contents %}
+		<p class="description" style="{{ desc_style }}">{{description}}</p>
+		<p><b>Input layer:</b> Layer <span class="input_layer">{{input_layer}}</span> <span class="input_sublayer">{{input_sublayer}}</span></p>	
+		<p><b>Output layer:</b> Layer <span class="output_layer">{{output_layer}}</span> <span class="output_sublayer">{{output_sublayer}}</span></p>	
+		<p><b>Feature type:</b> <span class="feature_type">{{feature_type}}</span></p>
+
+		<p class="sae_name_wrap" style="{{sae_name_style}}"><b>Feature comes from dictionary "</b><span class="sae_name">{{sae_name}}</span><b>"</b></p>
+		<p class="feature_idx_wrap" style="{{feature_idx_style}}"><b>Feature index:</b> <span class="feature_idx">{{feature_idx}}</span></p>
+		<p class="attn_head_wrap" style="{{attn_head_style}}"><b>Attention head:</b> <span class="attn_head">{{attn_head}}</span></p>
+		<div class="obs_tokens_wrap" style="{{obs_tokens_style}}"><b>Logit tokens/weights:</b> <div class="obs_tokens" style="display: inline-block">{{obs_tokens}}</div></div>
+	{% endset %}
+
+	{% set dynamic_contents='' %}
+	{% if not static_render %}
+		{% set dynamic_contents %}
+			<p class="metadata_only" style="display: none; color: red">(<b>Metadata only: </b>Only the metadata of this feature has been saved. Finding computational paths with this feature or getting this feature's activation is unavailable.)</p>
+			{% if show_buttons %}
+				<button onclick="showRenameFeatureForm(this)">Rename</button>
+				<button onclick="showEditFeatureDescriptionForm(this)">Edit description</button>
+				<div style="display: none" class="rename_form">
+					New name: <input type="text" class="name"/>
+					<button onclick="renameFeature(this)">Submit</button>
+				</div>
+				<div style="display: none" class="edit_description_form">
+					<textarea placeholder="Description" class="description_input"></textarea><br/>
+					<button onclick="editFeatureDescription(this)">Submit</button>
+				</div>
+			{% endif %}
+		{% endset %}
+	{% endif %}
+
+	{% set style='' %}
+	{% if not static_render %}
+		{% if id is none %}
+			{% set id='prompt_feature_list_template' %}
+		{% endif %}
+
+		{% if hidden %}
+			{% set style='display: none' %}
+		{% endif %}
+	{% else %}
+		{% if id is none %}
+			{% set id='' %}
+		{% endif %}
+	{% endif %}
+
+	{{ list_item(id, contents+dynamic_contents, class='prompt_feature_list_item', style=style, left_header_col=left_header_col, right_header_col=right_header_col) }}
+{% endmacro %}
+
+{% macro comp_paths_list_item(comp_path=none, onclick=none, static_right_header_col='')%}
+	{% if path is none %}
+		{% set static_render=false %}
+	{% else %}
+		{% set static_render=true %}
+	{% endif %}
+
+	{% if static_render %}
+		{% set name = comp_path.name %}
+	{% else %}
+		{% set name = '' %}
+	{% endif %}
+
+	{% set display_outdated = 'display: none;' %}
+	{% if static_render and comp_path.is_outdated %}
+		{% set display_outdated = '' %}
+	{% endif %}
+
+	{% set left_header_col %}
+		<b><span class="comp_path_name">{{name}}</span></b>
+		<b style="color: red; {{display_outdated}}" class="outdated_marker">(OUTDATED)</b>
+	{% endset %}
+
+	{% if not static_render %}
+		{% set right_header_col %}
+			<button class="view_path_button">View</button>
+			<button class="delete_path_button">&#10006;</button>
+		{% endset %}
+	{% else %}
+		{% set right_header_col = static_right_header_col %}
+	{% endif %}
+
+	{% if not static_render or comp_path.description == '' %}
+		{% set desc_style %}display: none;{% endset %}
+	{% else %}
+		{% set desc_style = '' %}
+	{% endif %}
+
+	{% if not static_render %}
+		{% set description='' %}
+		{% set comp_path_nodes='' %}
+	{% else %}
+		{% set description=comp_path.description %}
+		{% set comp_path_nodes %}
+			{{ misc_widgets.display_comp_path_nodes(comp_path, onclick=onclick) }}
+		{% endset %}
+	{% endif %}
+	{% set contents %}
+		<p class="description" style="{{desc_style}}">{{description}}</p>
+		<p class="comp_path_nodes">{{comp_path_nodes}}</p>
+	{% endset %}
+
+	{% set dynamic_contents='' %}
+	{% if not static_render %}
+		{% set dynamic_contents %}
+			<button onclick="showRenamePathForm(this)">Rename</button>
+			<button onclick="showEditPathDescriptionForm(this)">Edit description</button>
+			<div style="display: none" class="rename_form">
+				New name: <input type="text" class="name"/>
+				<button onclick="renamePath(this)">Submit</button>
+			</div>
+			<div style="display: none" class="edit_description_form">
+				<textarea placeholder="Description" class="description_input"></textarea><br/>
+				<button onclick="editPathDescription(this)">Submit</button>
+			</div>
+		{% endset %}
+	{% endif %}
+
+	{% if not static_render %}
+	 {% set id='comp_paths_item_template' %}
+	 {% set style='display: none' %}
+	{% else %}
+	 {% set id='' %}
+	 {% set style='' %}
+	{% endif %}
+
+	{{ list_item(id, contents+dynamic_contents, class='comp_paths_list_item', style=style, left_header_col=left_header_col, right_header_col=right_header_col) }}
+{% endmacro %}

@@ -1,0 +1,61 @@
+{% macro comp_path_attr(node=none) %}
+	<div id="comp_path_attr" class="small_div">
+		<details>
+			<summary>
+				<b>Total attribution:</b> <span class="total_attrib">{{'' if node is none else node.total_attrib}}</span>
+			</summary>
+			<p><b>Input-invariant factor:</b> &times;<span class="total_invar_factor">{{'' if node is none else node.total_invar_factor}}</span> (&times;<span class="invar_factor">{{'' if node is none else node.invar_factor}}</span> for this node)</p>
+			<p><b>LayerNorm scaling factor:</b> &times;<span class="total_parent_ln_constant">{{'' if node is none else node.total_parent_ln_constant}}</span> (&times;<span class="parent_ln_constant">{{'' if node is none else node.parent_ln_constant}}</span> from parent)</p>
+			<p><b>Attention score factor:</b> &times;<span class="total_attn_factor">{{'' if node is none else node.total_attn_factor}}</span> (&times;<span class="attn_factor">{{'' if node is none else node.attn_factor}}</span> for this node)</p>
+			<p><b>Feature activation factor:</b> &times;<span class="feature_activ">{{'' if node is none else node.feature_activ}}</span></p>
+		</details>
+	</div>
+{% endmacro %}
+
+{% macro display_token(token=none, template_id=none, classes='', highlight_token=false, clickable=true) %}
+	{% set static_render = tokens is not none %}
+
+	{% if template_id is none %} 
+		{% set id_str = '' %}
+		{% set display_style = 'display: inline-block;' %}
+	{% else %}
+		{% set id_str %}id="{{template_id}}"{% endset %}
+		{% set display_style = 'display: none; ' %}
+	{% endif %}
+
+	{% set highlight_style = '' %}
+	{% if highlight_token %}
+		{% set highlight_style = 'background-color: #bdb; ' %}
+	{% endif %}
+
+	<div {{id_str}} style="{{highlight_style}}{{display_style}}" class="{{classes}} token_wrapper {{ 'clickable' if clickable else '' }}" onmouseover="this.querySelector('.feature_activ').style.display='inline'" onmouseout="this.querySelector('.feature_activ').style.display='none'"><pre class="token" style="display: inline">{{ token if token is not none else '' }}</pre><span class="feature_activ" style="display: none"></span></div>
+{% endmacro %}
+
+{% macro display_comp_path_nodes(path_info, node_idx=none, onclick=none) %}
+	{% for node in path_info.nodes %}
+		{% if path_info.is_outdated %}
+			{% set token_pos_text = path_info.outdated_token_strs[node.token_pos] %}
+		{% else %}
+			{% set token_pos_text = node.token_pos %}
+		{% endif %}
+
+		{% if onclick is not none %}
+			{% set onclick_str %}onclick="{{onclick}}({{loop.index-1}})"{% endset %}
+			{% set classes='clickable ' %}
+		{% else %}
+			{% set onclick_str = '' %}
+			{% set classes='' %}
+		{% endif %}
+
+		{% set is_cur_node = node_idx is not none and node_idx == loop.index-1 %}
+		{% set node_name = node.name if node.name is not none else node.feature_info.name %}
+		<span {{onclick_str}} class="{{classes}}">
+			{% if is_cur_node %}<b>{% endif %}
+			{{ node_name }}@{{ token_pos_text }}: {{ node.total_attrib }}
+			{% if is_cur_node %}</b>{% endif %}
+			{% if loop.index-1 != path_info.nodes|length-1 %}
+				&#8592;
+			{% endif %}
+		</span>
+	{% endfor %}
+{% endmacro %}

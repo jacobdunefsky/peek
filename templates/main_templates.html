@@ -1,0 +1,637 @@
+{% import 'templates/list_items.html' as list_items %}
+
+{% macro session_info_div(sess=none) %}
+{% if sess is not none %}
+	{% set static_render=true %}
+{% else %}
+	{% set static_render=false %}
+{% endif %}
+
+<div id="session_info_div" class="big_div">
+	<!-- session name -->
+	{% if static_render %}
+		<h1 id="session_name">{{ sess.name }}</h1>
+	{% else %}
+		<h1 id="session_name"></h1>
+		<div id="rename_session_form" style="display: none">
+			<input type="text" style="font-size: 32pt; font-weight: bold;" class="name"/><button id="rename_session_button">Rename session</button>
+		</div>
+	{% endif %}
+	
+	<!-- session description -->
+	{% if static_render %}
+		{% if sess.description != "" and sess.description is not none %} 
+		<div id="session_description" class="description">{{ sess.description }}</div>
+		{% endif %}
+	{% else %}
+		<div id="session_description_wrapper">
+			<div id="session_description_placeholder" style="display: none" class="description_placeholder">
+				Click to add a description
+			</div>
+			<div id="session_description" class="description"></div>
+		</div>
+		<div id="edit_session_description_form" style="display: none">
+			<textarea class="description_input" placeholder="Description" style="flex-grow: 1"></textarea><button id="edit_session_description_button">Submit</button>
+		</div>
+	{% endif %}
+
+	<br/>
+
+	<!-- session loading/saving -->
+	{% if not static_render %}
+		<div>
+			<p style="display: none; color: red" id="load_save_error"></p>
+			<p><input type="text" id="session_path" placeholder="Session path"/><button onclick="loadSession()" id="load_session_button">Load session</button><button onclick="saveSession()" id="save_session_button">Save session</button> <label for="save_tensors_checkbox">Save session with tensors: </label><input type="checkbox" checked id="save_tensors_checkbox"/></p>
+			<p style="display: none; color: red" id="render_error"></p>
+			<p><input type="text" id="render_path" placeholder="HTML export path"/><button onclick="renderSession()" id="render_session_button">Export session to HTML</button></p>
+			<script type="text/javascript">
+				async function loadSession(){
+					const errorEle = $("#load_save_error");	
+					errorEle.style.display = 'none';
+
+					const loadButton = $("#load_session_button");
+					const originalLoadText = loadButton.innerText;
+					const saveButton = $("#save_session_button");
+					const originalSaveText = saveButton.innerText;
+					loadButton.disabled = true; loadButton.innerText = "Loading...";
+					saveButton.disabled = true;
+
+					const path = $("#session_path").value;
+					const resp = await fetchJson("/session/load", "POST", {'path': path});
+					if(!isOk(resp)){
+						errorEle.innerText = resp.json.error;
+						errorEle.style.display = 'block';
+					}
+
+					loadButton.disabled = false; loadButton.innerText = originalLoadText;
+					saveButton.disabled = false; saveButton.innerText = originalSaveText;
+
+					if(isOk(resp)){
+						window.location.reload(true);
+					}
+				}
+				async function renderSession(){
+					const errorEle = $("#render_error");	
+					errorEle.style.display = 'none';
+
+					const renderButton = $("#render_session_button");
+					const originalText = renderButton.innerText;
+					renderButton.disabled = true;
+					renderButton.innerText = "Rendering...";
+
+					const path = $("#render_path").value;
+					await fetchJson("/session/render", "PUT", {"path": path});
+
+					renderButton.disabled = false; renderButton.innerText = originalText;
+				}
+				async function saveSession(){
+					const errorEle = $("#load_save_error");	
+					errorEle.style.display = 'none';
+
+					const loadButton = $("#load_session_button");
+					const originalLoadText = loadButton.innerText;
+					const saveButton = $("#save_session_button");
+					const originalSaveText = saveButton.innerText;
+					loadButton.disabled = true;
+					saveButton.disabled = true; saveButton.innerText = "Saving...";
+
+					const path = $("#session_path").value;
+					const save_feature_tensors = $("#save_tensors_checkbox").checked;
+					await fetchJson("/session/save", "POST", {"path": path, 'save_feature_tensors': save_feature_tensors});
+
+					loadButton.disabled = false; loadButton.innerText = originalLoadText;
+					saveButton.disabled = false; saveButton.innerText = originalSaveText;
+				}
+			</script>
+		</div>
+		<br/>
+
+		<script type="text/javascript">
+			function refreshSessionInfo(data){
+				document.title = data['name'] + " | Peek";
+				$("#session_name").innerText = data['name'];
+
+				const description = data['description'];
+
+				if(description == "" || description == null){
+					$("#session_description_placeholder").style.display = 'block';
+					$("#session_description").style.display = 'none';
+				}
+				else {
+					$("#session_description").style.display = 'block';
+					$("#session_description_placeholder").style.display = 'none';
+					$("#session_description").innerText = description;
+				}
+			}
+
+			async function getSessionInfo(){
+				window.sessionInfo.update((await fetchJson('/session')).json);
+			}
+
+			window.sessionInfo.addSub(refreshSessionInfo); getSessionInfo();
+			
+			registerInlineForm(
+				$("#session_name"),
+				$("#rename_session_form"),
+				$("#rename_session_form").querySelector(".name"),
+				$("#session_name"),
+				$("#rename_session_button"),
+				async function(sessionName){
+					const formDict = {"name": sessionName};
+					await fetchJson("/session/rename", "PUT", formDict);
+
+					await getSessionInfo();
+				}
+			);
+
+			registerInlineForm(
+				$("#session_description_wrapper"),
+				$("#edit_session_description_form"),
+				$("#edit_session_description_form").querySelector(".description_input"),
+				$("#session_description"),
+				$("#edit_session_description_button"),
+				async function(sessionDescription){
+					const formDict = {"description": sessionDescription};
+					await fetchJson("/session/rename", "PUT", formDict);
+
+					await getSessionInfo();
+				}
+			);
+		</script>
+	{% endif %}
+
+	<hr/>
+	<div id="session_info_tabs" style="margin-bottom: 1rem;">
+		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('model_info_div');" id="model_info_div_session_info_tab">Model info</span>
+		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('saes_div');" id="saes_div_session_info_tab">Dictionaries</span>
+		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('prompts_div');" id="prompts_div_session_info_tab">Prompts</span>
+		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('feature_lists_div');" id="feature_lists_div_session_info_tab">Feature lists</span>
+	</div>
+	<div id="model_info_div">
+		{% if not static_render %}
+			{% set model_name='' %}
+			{% set model_n_layers='' %}
+			{% set model_n_params='' %}
+			<div id="no_model_loaded_div">
+				<p>No model loaded yet.</p>
+				<p id="load_model_error" style="color: red; display: none"></p>
+				<p><input id="model_load_path" placeholder="Model name" value="gpt2"/><button onclick="loadModel()" id="load_model_button">Load model</button></p>
+			</div>
+		{% else %}
+			{% set model_name=sess.model_info.name %}
+			{% set model_n_layers=sess.model_info.n_layers %}
+			{% set model_n_params=sess.model_info.n_params %}
+		{% endif %}
+		<div style='{{"display: none;" if not static_render else ""}}' id="loaded_model_info_div">
+			<p><b>Model name:</b> <span id="model_name">{{model_name}}</span></p>
+			<p><b>Number of layers:</b> <span id="model_n_layers">{{model_n_layers}}</span></p>
+			<p><b>Parameter count:</b> <span id="model_n_params">{{model_n_params}}</span></p>
+		</div>
+
+		{% if not static_render %}
+			<script type="text/javascript">
+				async function getModelInfo(){
+					window.modelInfo.update((await fetchJson("/model")).json);
+				}
+
+				async function loadModel(){
+					$('#model_load_path').disabled = true;
+					$('#load_model_button').disabled = true;
+					const originalLoadButtonText = $('#load_model_button').innerText;
+					$('#load_model_button').innerHTML = "Model loading...";
+
+					const model_path = $('#model_load_path').value;
+					const modelResp = await fetchJson('/model', "POST", {'name': model_path});
+
+					$('#model_load_path').disabled = false;
+					$('#load_model_button').disabled = false;
+					$('#load_model_button').innerHTML = originalLoadButtonText;
+
+					const errorEle = $("#load_model_error");
+					if(!isOk(modelResp)){
+						const error = modelResp.json.error;
+						errorEle.style.display = 'block';
+						errorEle.innerText = "Error: " + error
+					}
+					else {
+						errorEle.style.display = 'none';
+						await getModelInfo();
+					}
+				}
+
+				function refreshModelInfoView(data){
+					$('#no_model_loaded_div').style.display = 'none';
+					$('#loaded_model_info_div').style.display = 'block';
+
+					$('#model_name').innerHTML = data['name']
+					$('#model_n_layers').innerHTML = data['n_layers']
+					$('#model_n_params').innerHTML = data['n_params']
+				}
+
+				window.modelInfo.addSub(refreshModelInfoView);
+				getModelInfo();
+			</script>
+		{% endif %}
+	</div>
+
+	<div id="saes_div">
+		{% if not static_render %}
+		<div>
+			<p id="load_sae_error" style="color: red; display: none"></p>
+			<p>Load dictionary (or dictionaries) from local path: <input id="load_sae_path" type="text"/><button onclick="loadSaeFromPath()" id="load_sae_button">Load</button></p>
+			<p>Load dictionaries from HuggingFace repo: <input id="load_saes_hf_repo" type="text" placeholder="Repo name" value="jacobdunefsky/gpt2small-transcoders"/><button onclick="loadSaesFromRepo()" id="load_saes_hf_button">Load</button></p>
+		</div>
+		{% endif %}
+
+		<!-- SAE list -->
+		{% if not static_render %}
+			{{ list_items.sae_list_item() }}
+		{% endif %}
+
+		<div id="saes_list_div" class="list_div" style="border-width: 1px; border-style: solid">
+			{% if static_render %}
+				{% for sae_info in sess.sae_list.dict.values() %}
+					{{ list_items.sae_list_item(sae_info) }}
+				{% endfor %}
+			{% endif %}
+		</div>
+		{% if not static_render %}
+			<script type="text/javascript">
+				async function getSaesInfo(){
+					const saesInfo = (await fetchJson('/saes')).json;
+					window.saesInfo.update(saesInfo);
+				}
+
+				async function loadSaeFromPath(){
+					$('#load_sae_path').disabled = true;
+					$('#load_sae_button').disabled = true;
+					const originalLoadButtonText = $('#load_sae_button').innerText;
+					$('#load_sae_button').innerHTML = "Loading...";
+
+					const path = $('#load_sae_path').value
+					const saeResp = await fetchJson('/saes', 'POST', {'path': path});
+
+					$('#load_sae_path').disabled = false;
+					$('#load_sae_button').disabled = false;
+					$('#load_sae_button').innerHTML = originalLoadButtonText;
+
+					const errorEle = $("#load_sae_error");
+					if(!isOk(saeResp)){
+						const error = saeResp.json.error;
+						errorEle.style.display = 'block';
+						errorEle.innerText = "Error: " + error
+					}
+					else {
+						errorEle.style.display = 'none';
+						await getSaesInfo();
+					}
+				}
+
+				async function loadSaesFromRepo(){
+					$('#load_saes_hf_repo').disabled = true;
+					$('#load_saes_hf_button').disabled = true;
+					const originalLoadButtonText = $('#load_saes_hf_button').innerText;
+					$('#load_saes_hf_button').innerHTML = "Loading...";
+
+					const repo = $('#load_saes_hf_repo').value
+					const saeResp = await fetchJson('/saes', 'POST', {'hf_repo': repo});
+
+					$('#load_saes_hf_repo').disabled = false;
+					$('#load_saes_hf_button').disabled = false;
+					$('#load_saes_hf_button').innerHTML = originalLoadButtonText;
+
+					const errorEle = $("#load_sae_error");
+					if(!isOk(saeResp)){
+						const error = saeResp.json.error;
+						errorEle.style.display = 'block';
+						errorEle.innerText = "Error: " + error
+					}
+					else {
+						errorEle.style.display = 'none';
+						await getSaesInfo();
+					}
+				}
+
+				async function deleteSae(e){
+					const id = e.closest('.saes_list_item').querySelector(".id").value;
+					await fetchJson('/saes/'+id, "DELETE");
+					await getSaesInfo();
+				}
+
+				function updateSaesListView(saesInfo){
+					const itemTemplate = $('#saes_list_template');
+					const listNode = $('#saes_list_div');
+					if(saesInfo.length == 0){
+						listNode.innerHTML = "No dictionaries have been loaded yet.";
+						return;
+					}
+
+					listNode.innerHTML = '';
+					for(var i = 0; i < saesInfo.length; i++){
+						const curInfo = saesInfo[i];
+
+						var newNode = itemTemplate.cloneNode(true);
+						newNode.removeAttribute("id");
+
+						newNode.querySelector('.id').innerHTML = curInfo['id'];
+						newNode.querySelector('.short_name').innerHTML = curInfo['short_name'];
+						newNode.querySelector('.name').innerHTML = curInfo['name'];
+						newNode.querySelector('.input_layer').innerHTML = curInfo['input_layer'].layer;
+						newNode.querySelector('.input_sublayer').innerHTML = curInfo['input_layer'].sublayer;
+						newNode.querySelector('.output_layer').innerHTML = curInfo['output_layer'].layer;
+						newNode.querySelector('.output_sublayer').innerHTML = curInfo['output_layer'].sublayer;
+						newNode.querySelector('.num_features').innerHTML = curInfo['num_features'];
+						
+						if(curInfo['upstreams'].length > 0){
+							const upstream_type = curInfo['upstreams'][0].path_type;
+							if(upstream_type == "huggingface"){
+								newNode.querySelector('.upstream_type').innerHTML = "Huggingface repo";
+								newNode.querySelector(".upstream_hf_repo").innerText = " in repo " + curInfo['upstreams'][0]['hf_repo_id'];
+								newNode.querySelector(".upstream_path").innerText = curInfo['upstreams'][0]['hf_path'];
+							}
+							else if(upstream_type == "absolute_path" || upstream_type == "relative_path"){
+								newNode.querySelector('.upstream_type').innerHTML = "Local path";
+								newNode.querySelector(".upstream_path").innerText = curInfo['upstreams'][0][upstream_type];
+							}
+						}
+
+						newNode.style.display = 'block';
+						listNode.appendChild(newNode);
+					}
+				}
+
+				window.saesInfo.addSub(updateSaesListView);
+				getSaesInfo();
+			</script>
+		{% endif %}
+	</div>
+
+	<div id="prompts_div">
+		{% if not static_render %}
+			{{ list_items.prompt_list_item() }}
+		{% endif %}
+		<div id="prompts_list" class="list_div" style="border-style: solid; border-width: 1px">
+			{% if static_render %}
+				{% for prompt in sess.prompt_list.dict.values() %}
+					{{ list_items.prompt_list_item(prompt) }}
+				{% endfor %}
+			{% endif %}
+		</div>
+		{% if not static_render %}
+			<script type="text/javascript">
+				function refreshPromptsList(promptsInfo){
+					const itemTemplate = $("#prompts_list_template");
+					const listNode = $("#prompts_list");
+					listNode.innerHTML = "";
+
+					for(const curInfo of promptsInfo){
+						const newNode = itemTemplate.cloneNode(true);
+						newNode.removeAttribute("id");
+
+						if(promptsInfo.length == 1){
+							newNode.querySelector(".delete_prompt_button").style.display = "none";
+						}
+
+						newNode.querySelector(".id").value = curInfo['id'];
+						newNode.querySelector(".name").innerHTML = curInfo['name'];
+						if(curInfo['description'] != undefined && curInfo['description'] != ''){
+							newNode.querySelector(".description").style.display = 'block';
+							newNode.querySelector(".description").innerHTML = curInfo['description'];
+						}
+						const tokens = curInfo['tokens'];
+						if(tokens.length > 0){
+							const snippetNode = newNode.querySelector(".prompt_snippet");
+							snippetNode.style.display = "block";
+							// get first ten tokens of prompt
+							const snippet = tokens.slice(0,10).join("");
+							snippetNode.innerHTML = snippet + "&#8230;";
+						}
+
+						newNode.style.display = "block";
+						listNode.appendChild(newNode);
+					}
+				}
+
+				async function deletePrompt(e){
+					const id = parseInt(e.closest('.prompts_list_item').querySelector(".id").value, 10);
+					const prevAllPromptsInfo = window.allPromptsInfo.data;
+					
+					await fetchJson('/prompts/'+id, "DELETE");
+					window.allPromptsInfo.update((await fetchJson("/prompts")).json);
+
+					// update current prompt if we just deleted our current prompt
+					const curPromptIdx = window.curPromptIdx.data;
+					var nextId = 0;
+					var nextSelectIdx = 0;
+					var deletedSelectIdx = 0;
+					for(var i = 0; i < prevAllPromptsInfo.length; i++){
+						if(prevAllPromptsInfo[i].id == parseInt(id, 10)){
+							if(i > 0){
+								nextId = prevAllPromptsInfo[i-1].id;
+								nextSelectIdx = i-1;
+							}
+							else if(i < prevAllPromptsInfo.length-1){
+								nextId = prevAllPromptsInfo[i+1].id
+								nextSelectIdx = i+1;
+							}
+							deletedSelectIdx = i; 
+							break;
+						}
+					}
+					if(id == curPromptIdx){
+						await getCurPromptInfo(nextId);
+						window.curPromptIdx.update(nextId);
+						await getCurPromptFeatureListInfo();
+						$("#select_prompt").selectedIndex = nextSelectIdx;
+					}
+					else {
+						if(deletedSelectIdx < $("#select_prompt").selectedIndex){
+							$("#select_prompt").selectedIndex = curSelectIdx-1;
+						}
+					}
+				}
+
+				window.allPromptsInfo.addSub(refreshPromptsList);
+			</script>
+			<div id="add_new_prompt_form" class="small_div">
+				<p>Add a new prompt</p>
+				<p>Name: <input type="text" class="name" placeholder="Name"/></p>
+				<p>Description: <textarea class="description_input" placeholder="Description"></textarea></p>
+				<p><button onclick="addNewPrompt()">Add</button>
+
+				<script type="text/javascript">
+					async function addNewPrompt(){
+						const formEle = $("#add_new_prompt_form");
+						const name = formEle.querySelector(".name").value;
+						const description = formEle.querySelector(".description_input").value;
+						const postDict = {}
+						if(name != ""){
+							postDict.name = name;
+						}
+						if(description != ""){
+							postDict.description = description;
+						}
+						await fetchJson("/prompts", "POST", postDict);
+						window.allPromptsInfo.update((await fetchJson("/prompts")).json);
+					}
+				</script>
+			</div>
+		{% endif %}
+	</div>
+
+	<div id="feature_lists_div">
+		{% if not static_render %}
+			{{ list_items.feature_lists_list_item() }}
+		{% endif %}
+		<div id="feature_lists_list" class="list_div" style="border-style: solid; border-width: 1px">
+			{% if static_render %}
+				{% for feature_list in sess.all_feature_lists.dict.values() %}
+					{{ list_items.feature_lists_list_item(feature_list) }}
+				{% endfor %}
+			{% endif %}
+		</div>
+		{% if not static_render %}
+			<script type="text/javascript">
+				// rename/edit description form functions
+				function clearForm(formEle){
+					for(const curInput of formEle.querySelectorAll("input")){
+						curInput.value = "";
+					}
+					for(const curInput of formEle.querySelectorAll("textarea")){
+						curInput.value = "";
+					}
+				}
+
+				function showRenameFeatureListForm(ele){
+					const formEle = ele.closest(".feature_lists_list_item").querySelector(".rename_form");
+					clearForm(formEle);
+					formEle.style.display = "block";
+				}
+				async function renameFeatureList(ele){
+					const parentEle = ele.closest(".feature_lists_list_item");
+					const idx = parentEle.querySelector(".id").value;
+					const formEle = parentEle.querySelector(".rename_form");
+					const name = formEle.querySelector(".name").value;
+
+					await fetchJson("/feature_lists/" + idx, "PUT", {"name": name});
+
+					clearForm(formEle);
+					formEle.style.display = "none";
+
+					getAllFeatureListsInfo();
+				}
+				function showEditFeatureListDescriptionForm(ele){
+					const formEle = ele.closest(".feature_lists_list_item").querySelector(".edit_description_form");
+					clearForm(formEle);
+					formEle.style.display = "block";
+				}
+				async function editFeatureListDescription(ele){
+					const parentEle = ele.closest(".feature_lists_list_item");
+					const idx = parentEle.querySelector(".id").value;
+					const formEle = parentEle.querySelector(".edit_description_form");
+					const description = formEle.querySelector(".description_input").value;
+
+					await fetchJson("/feature_lists/" + idx, "PUT", {"description": description});
+
+					clearForm(formEle);
+					formEle.style.display = "none";
+
+					getAllFeatureListsInfo();
+				}
+				// end rename/edit description form functions
+			
+				function refreshAllFeatureLists(listsInfo){
+					const itemTemplate = $("#feature_lists_list_template");
+					const listNode = $("#feature_lists_list");
+					listNode.innerHTML = "";
+
+					for(const curInfo of listsInfo){
+						const newNode = itemTemplate.cloneNode(true);
+						newNode.removeAttribute("id");
+
+						newNode.querySelector(".id").value = curInfo['id'];
+						newNode.querySelector(".name").innerHTML = curInfo['name'];
+
+						if(curInfo['description'] != undefined && curInfo['description'] != ""){
+							newNode.querySelector(".description").style.display = 'block';
+							newNode.querySelector(".description").innerText = curInfo['description'];
+						}
+						newNode.querySelector(".num_features").innerHTML = curInfo['num_features'];
+
+						if(listsInfo.length == 1){
+							newNode.querySelector(".delete_feature_list_button").style.display="none";
+						}
+
+						newNode.style.display = "block";
+						listNode.appendChild(newNode);
+					}
+				}
+
+				async function deleteFeatureList(e){
+					const id = e.closest('.feature_lists_list_item').querySelector(".id").value;
+					await fetchJson('/feature_lists/'+id, "DELETE");
+					if(parseInt(id, 10) == window.curPromptInfo.data['cur_feature_list_idx']){
+						await getCurPromptInfo();
+						await getCurPromptFeatureListInfo();
+					}
+					await getAllFeatureListsInfo();
+				}
+
+				async function copyFeatureList(e){
+					const id = e.closest('.feature_lists_list_item').querySelector(".id").value;
+					await fetchJson('/feature_lists', "POST", {"copy_from_id": id});
+					await getAllFeatureListsInfo();
+				}
+
+				window.allFeatureListsInfo.addSub(refreshAllFeatureLists);
+			</script>
+			<div id="add_new_feature_list_form" class="small_div"><details style="display: flex">
+				<summary><b>Create a new feature list</b></summary>
+				<p>Name: <input type="text" class="name" placeholder="Name"/></p>
+				<p>Description: <textarea class="description_input" placeholder="Description"></textarea></p>
+				<p><button onclick="addNewFeatureList()">Add</button>
+
+				<script type="text/javascript">
+					async function addNewFeatureList(){
+						const formEle = $("#add_new_feature_list_form");
+						const name = formEle.querySelector(".name").value;
+						const description = formEle.querySelector(".description_input").value;
+						const postDict = {}
+						if(name != ""){
+							postDict.name = name;
+						}
+						if(description != ""){
+							postDict.description = description;
+						}
+						await fetchJson("/feature_lists", "POST", postDict);
+						await getAllFeatureListsInfo();
+					}
+				</script>
+			</details></div>
+		{% endif %}
+	</div>
+
+	<script type="text/javascript">
+		const allSessionInfoTabIds = ["model_info_div", "saes_div", "prompts_div", "feature_lists_div"];
+		function switchSessionInfoTab(newTabId){
+			for(const curTabId of allSessionInfoTabIds){
+				const ele = $("#" + curTabId);
+				const tabEle = $("#" + curTabId + "_session_info_tab");
+				if(curTabId != newTabId) {
+					ele.style.display = 'none';
+					tabEle.style.fontWeight = 'normal';
+					tabEle.style.backgroundColor = "";
+				}
+				else {
+					ele.style.display = 'block';
+					tabEle.style.fontWeight = 'bold';
+					tabEle.style.backgroundColor = "#bdb";
+				}
+			}
+		}
+		
+		switchSessionInfoTab("model_info_div");
+	</script>
+</div>
+
+{% endmacro %}

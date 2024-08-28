@@ -1,0 +1,51 @@
+{% macro inline_description_form(name) %}
+<div id="{{name}}_wrapper">
+	<div id="{{name}_placeholder" style="display: none" class="description_placeholder">
+		Click to add a description
+	</div>
+	<div id="{{name}}_value" class="description"></div>
+</div>
+<div id="{{name}}_form" style="display: none">
+	<textarea class="description_input" placeholder="Description" style="flex-grow: 1"></textarea><button id="{{name}}_button">Submit</button>
+</div>
+
+<script>
+
+</script>
+{% endmacro %}
+
+{% macro list_item(id, contents, class='', style='', left_header_col='', right_header_col='') %}
+<div id="{{id}}" class="{{class}} list_item" style="{{style}}">
+	<details class="list_details">
+		<summary class="clickable" style="display: flex">
+			<span style="flex: 1">{{left_header_col}}</span>
+			<span style="flex: 1; text-align: right; margin-right: 5%">{{right_header_col}}</span>
+		</summary>
+		<span style="display: none" class="id"></span>
+	</details>
+</div>
+{% endmacro %}
+
+{% macro sae_list_item(id, do_display=false, short_name='', name='', upstream_type='', upstream_path='', upstream_hf_repo='', input_layer='', input_sublayer='', output_layer='', output_sublayer='', num_features='') %}
+
+{% set left_header_col %}
+
+{% endset %}
+
+{% set contents %}
+<p><b>Full name:</b> <span class="name">{{name}}</span></p>
+<p><b>Upstream origin:</b> <span class="upstream_type">{{upstream_type}}</span> at <span class="upstream_path">{{upstream_path}}</span><span class="upstream_hf_repo">{{upstream_hf_repo}}</span></p>
+<p><b>Input layer:</b> Layer <span class="input_layer">{{input_layer}}</span> <span class="input_sublayer">{{input_sublayer}}</span></p>	
+<p><b>Output layer:</b> Layer <span class="output_layer">{{output_layer}}</span> <span class="output_sublayer">{{output_sublayer}}</span></p>	
+<p><b>Number of features:</b> <span class="num_features">{{num_features}}</span></p>
+{% endset %}
+
+{% if do_display %}
+ {% set style='display: none' %}
+{% else %}
+ {% set style='' %}
+{% endif %}
+
+{{ list_item(id, contents, class='saes_list_item', style=style, 
+
+{% endmacro %}

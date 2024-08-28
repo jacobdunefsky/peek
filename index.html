@@ -1,0 +1,1635 @@
+{% import 'templates/list_items.html' as list_items %}
+{% import 'templates/misc_widgets.html' as misc_widgets %}
+{% import 'templates/main_templates.html' as main_templates %}
+
+<html>
+<head>
+<title>Peek</title>
+<link href="style.css" rel="stylesheet"/>
+<script type="text/javascript">
+	function $(q) { return document.querySelector(q); };
+
+	function escapeHTML(s){
+		const ele = document.createElement('p');
+		ele.innerText = s;
+		return ele.innerHTML;
+	}
+
+	async function fetchJson(url, method="GET", json_body){
+		if(typeof json_body !== "undefined"){
+			const body_str = JSON.stringify(json_body);
+			var headers = new Headers();
+			headers.append("Content-Type", "application/json");
+			var request = new Request(url, {method: method, body: body_str, headers: headers});
+		}
+		else {
+			var request = new Request(url, {method: method});
+		}
+		const response = await fetch(request);
+		var response_json;
+		if(response.status != 204){
+			response_json = await response.json();
+		}
+		else {
+			response_json = {};
+		}
+		return {status: response.status, json: response_json};
+	}
+	
+	function isOk(r){ return (200 <= r.status && r.status < 300); }
+
+	class DataPub {
+		constructor(){
+			this.data = null;
+			this.subscribers = new Set();
+		}
+
+		addSub(f){
+			this.subscribers.add(f);
+		}
+
+		delSub(f){
+			this.subscribers.delete(f);
+		}
+
+		broadcast(){
+			for(const f of this.subscribers){ f(this.data); }
+		}
+
+		update(data){
+			this.data = data;
+			this.broadcast();
+		}
+	}
+
+	// here there be globals
+	window.sessionInfo = new DataPub();
+
+	window.modelInfo = new DataPub();
+	window.saesInfo = new DataPub();
+	window.allFeatureListsInfo = new DataPub();
+
+	window.allPromptsInfo = new DataPub();
+
+	window.curPromptIdx = new DataPub();
+	window.curPromptInfo = new DataPub();
+	window.curPromptFeatureListInfo = new DataPub();
+	window.curCompPathInfo = new DataPub();
+	window.curCompPathNodeIdx = new DataPub();
+	window.curPromptCompPathsInfo = new DataPub();
+
+	window.curTokenIdx = new DataPub();
+
+	// here be functions for implementing inline forms
+	function registerInlineForm(displayedWrapperEle, formEle, inputEle, displayedValueEle, submitButtonEle, submitFunc){
+		const relevantEles = [displayedWrapperEle, /*formEle, */inputEle, displayedValueEle, submitButtonEle];
+
+		const showInlineForm = function(){
+			displayedWrapperEle.style.display = "none";
+			formEle.style.display = "flex";
+			inputEle.value = displayedValueEle.innerText;
+			inputEle.focus();
+		}
+
+		const hideInlineForm = function(){
+			displayedWrapperEle.style.display = "block";
+			formEle.style.display = "none";
+		}
+
+		displayedWrapperEle.addEventListener('click', function(){
+			showInlineForm();
+		});
+
+		document.addEventListener('click', function(e){
+			var clickIsOnTarget = false;
+			for(const ele of relevantEles){
+				if(ele.contains(e.target)){
+					clickIsOnTarget = true;
+					break;
+				}
+			}
+			if(!clickIsOnTarget){
+				hideInlineForm();
+			}
+		});
+
+		submitButtonEle.addEventListener('click', function(e){
+			(async function(){
+				await submitFunc(inputEle.value);
+				hideInlineForm();
+			})();
+		});
+	}
+</script>
+</head>
+<body>
+	{{ main_templates.session_info_div() }}
+
+	<div id="main_dashboard_placeholder" class="big_div">
+		<p>Load a model to get started.</p>
+	</div>
+	<div id="main_dashboard_elements" style="display: none">
+	<script type="text/javascript">
+		window.modelInfo.addSub(function(modelInfo){
+			if(modelInfo != null){
+				$("#main_dashboard_placeholder").style.display = 'none';
+				$("#main_dashboard_elements").style.display = 'block';
+			}
+		});
+	</script>
+
+	<div id="prompt_view" class="big_div">
+		<div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+			<div style="flex: 1; margin-right: 0.5rem;">
+				<p>
+					Select prompt:
+					<select id="select_prompt">
+
+					</select>
+					<button onclick="selectCurPrompt()">Load</button>
+					<script type="text/javascript">
+						async function getAllPrompts() {
+							window.allPromptsInfo.update((await fetchJson("/prompts")).json);
+							if(window.curPromptIdx.data == null){
+								// no prompt has been loaded yet
+								const newPromptIdx = window.allPromptsInfo.data[0]['id'];
+
+								await getCurPromptInfo(newPromptIdx);
+								window.curPromptIdx.update(newPromptIdx);
+								await getCurPromptFeatureListInfo();
+							}
+						}
+
+						function refreshPromptsDropdown(promptsInfo) {
+							const promptSelect = $("#select_prompt");
+							var originalIdx = promptSelect.selectedIndex;
+							if(originalIdx == -1){
+								originalIdx = 0;
+							}
+							promptSelect.innerHTML = '';
+							for(const promptInfo of promptsInfo){
+								const option = document.createElement("option");
+								option.value = promptInfo['id'];
+								option.innerText = promptInfo['name'];
+								promptSelect.appendChild(option);
+							}
+							promptSelect.selectedIndex = originalIdx;
+						}
+
+						window.allPromptsInfo.addSub(refreshPromptsDropdown);
+						getAllPrompts();
+
+						function refreshPromptView(promptInfo){
+							$("#prompt_view").querySelector(".prompt_name").innerText = promptInfo['name'];
+
+							const description = promptInfo['description'];
+							if(description == "" || description == null){
+								$("#prompt_view").querySelector(".prompt_description_placeholder").style.display = 'block';
+								$("#prompt_description").style.display = 'none';
+							}
+							else {
+								$("#prompt_view").querySelector(".prompt_description_placeholder").style.display = 'none';
+								$("#prompt_description").style.display = 'block';
+								$("#prompt_description").innerText = description;
+							}
+
+							const tokens = promptInfo['tokens'];
+							if(tokens.length == 0){
+								$("#prompt_tokens_placeholder").style.display = 'block';
+								$("#prompt_tokens").style.display = 'none';
+								$("#prompt_text").value = "";
+							}
+							else {
+								// slice from token 1 to avoid BOS token
+								$("#prompt_text").value = tokens.slice(1).join("");
+
+								$("#prompt_tokens").style.display = 'block';
+								$("#prompt_view").querySelector("#prompt_tokens_placeholder").style.display = 'none';
+
+								const prompt_tokens = $("#prompt_tokens");
+								const prompt_template = $("#prompt_token_template");
+								prompt_tokens.innerHTML = '';
+								for(var i = 0; i < tokens.length; i++){
+									const curIdx = i;
+									const new_node = prompt_template.cloneNode(true);
+									new_node.removeAttribute("id");
+									new_node.querySelector('.token').innerText = tokens[i];
+									new_node.onclick = function(event){
+										setCurToken(curIdx.valueOf());
+									};
+									new_node.style.display='inline-block';
+									prompt_tokens.appendChild(new_node);
+								}
+							}
+
+							// now that our prompt view has been refreshed, refresh our computational path view
+							// this way, if our computational path is outdated, then the UI will reflect this fact
+
+							getCurCompPath(window.curPromptIdx.data);
+							getCompPathsForPrompt(window.curPromptIdx.data);
+
+
+
+						}
+
+						async function getCurPromptInfo(curPromptIdx){
+							if(curPromptIdx == undefined){
+								curPromptIdx = window.curPromptIdx.data; 
+							}
+							window.curPromptInfo.update((await fetchJson("/prompts/"+curPromptIdx)).json);
+						}
+
+						async function getCurPromptFeatureListInfo(featureListIdx){
+							if(featureListIdx == undefined){
+								featureListIdx = window.curPromptInfo.data['cur_feature_list_idx'];
+							}
+							const curInfo = (await fetchJson("/feature_lists/" + featureListIdx)).json;
+							window.curPromptFeatureListInfo.update(curInfo);
+						}
+
+						async function selectCurPrompt(){
+							const promptSelectIdx = parseInt($("#select_prompt").value, 10);
+
+							await getCurPromptInfo(promptSelectIdx);
+							window.curPromptIdx.update(promptSelectIdx);
+							await getCurPromptFeatureListInfo();
+						}
+
+						async function run_cur_prompt(){
+							const prompt_text = $("#prompt_text").value;	
+							const curPromptIdx = window.curPromptIdx.data;
+
+							$("#run_prompt_button").disabled = true;
+							const originalButtonText = $('#run_prompt_button').innerText;
+							$("#run_prompt_button").innerText = "Running prompt...";
+
+							await fetchJson("/prompts/" + curPromptIdx + "/run", "PUT", {'text': prompt_text});
+							await getCurPromptInfo();
+
+							$("#run_prompt_button").disabled = false;
+							$("#run_prompt_button").innerText = originalButtonText;
+
+							window.curTokenIdx.update(null);
+						}
+
+						window.curPromptInfo.addSub(refreshPromptView);
+					</script>
+				</p>
+				<br/>
+				<p class="prompt_name" onclick="showRenamePromptForm()"></p>
+				<div id="rename_prompt_form" style="display: none">
+					<input type="text" style="font-size: 32pt; font-weight: bold;" class="name" onfocusout="unfocusRenamePromptForm()"/><button onclick="renamePrompt()">Rename prompt</button>
+				</div>
+				<div class="prompt_description_wrapper" onclick="showEditPromptDescriptionForm()">
+					<div class="prompt_description_placeholder description_placeholder" style="display: none">
+						This prompt has no description. Click here to add one.
+					</div>
+					<div id="prompt_description" class="description"></div>
+				</div>
+				<div id="edit_description_prompt_form" style="display: none">
+					<textarea class="description_input" onfocusout="unfocusEditPromptDescriptionForm()" placeholder="Description"></textarea><button onclick="editPromptDescription()">Submit</button>
+				</div>
+				<br/>
+				<script type="text/javascript">
+					function showRenamePromptForm(){
+						$(".prompt_name").style.display = "none";
+						$("#rename_prompt_form").style.display = "flex";
+						const nameEle = $("#rename_prompt_form").querySelector(".name")
+						nameEle.value = $(".prompt_name").innerText;
+						nameEle.focus();
+					}
+
+					function unfocusRenamePromptForm(){
+						//stupid hack
+						// shoutouts to someone on SO for this
+						setTimeout(hideRenamePromptForm, 100);
+					}
+
+					function hideRenamePromptForm(){
+						$(".prompt_name").style.display = "block";
+						$("#rename_prompt_form").style.display = "none";
+					}
+
+					async function renamePrompt(){
+						const promptName = $("#rename_prompt_form").querySelector(".name").value;
+						
+						const formDict = {"name": promptName};
+						await fetchJson("/prompts/" + window.curPromptIdx.data, "PUT", formDict);
+
+						await getAllPrompts();
+						await getCurPromptInfo();
+
+						hideRenamePromptForm();
+					}
+
+				function showEditPromptDescriptionForm(){
+						$(".prompt_description_wrapper").style.display = "none";
+						$("#edit_description_prompt_form").style.display = "flex";
+						const nameEle = $("#edit_description_prompt_form").querySelector(".description_input")
+						nameEle.value = $("#prompt_description").innerText;
+						nameEle.focus();
+					}
+
+					function unfocusEditPromptDescriptionForm(){
+						//stupid hack
+						// shoutouts to someone on SO for this
+						setTimeout(hideEditPromptDescriptionForm, 100);
+					}
+
+					function hideEditPromptDescriptionForm(){
+						$(".prompt_description_wrapper").style.display = "block";
+						$("#edit_description_prompt_form").style.display = "none";
+					}
+
+					async function editPromptDescription(){
+						const promptDescription = $("#edit_description_prompt_form").querySelector(".description_input").value;
+						
+						const formDict = {"description": promptDescription};
+						await fetchJson("/prompts/" + window.curPromptIdx.data, "PUT", formDict);
+
+						await getAllPrompts();
+						await getCurPromptInfo();
+
+						hideEditPromptDescriptionForm();
+					}
+				</script>
+				<div style="display: flex">
+					<textarea rows=5 id="prompt_text" style="flex-grow: 1"></textarea>
+					<button onclick="run_cur_prompt()" id="run_prompt_button">Run prompt</button>
+				</div>
+				<div>
+					<div id="prompt_tokens_placeholder">
+						No prompt has been run yet.
+					</div>
+					{{ misc_widgets.display_token(template_id='prompt_token_template', classes='prompt_token') }}
+					<div id="prompt_tokens" class="special small_div"></div>
+				</div>
+				<!-- Computational paths list -->
+				<div class="small_div">
+					<p>Pinned computational paths:</p>
+					<div id="comp_paths_item_template" style="display: none;" class="comp_paths_list_item list_item">
+					<details class="list_details">
+						<summary style="display: flex" class="clickable">
+							<span style="flex: 1">
+								<b class="comp_path_name"></b>
+								<b style="color: red; display: none" class="outdated_marker">(OUTDATED)</b>
+							</span>
+							<span style="flex: 1; text-align: right; margin-right: 5%">
+								<button class="view_path_button">View</button>
+								<button class="delete_path_button">&#10006;</button>
+							</span>
+						</summary>	
+						<p class="description" style="display: none"></p>
+						<p class="comp_path_nodes"></p>
+						<input type="hidden" class="id"/>
+						<button onclick="showRenamePathForm(this)">Rename</button>
+						<button onclick="showEditPathDescriptionForm(this)">Edit description</button>
+						<div style="display: none" class="rename_form">
+							New name: <input type="text" class="name"/>
+							<button onclick="renamePath(this)">Submit</button>
+						</div>
+						<div style="display: none" class="edit_description_form">
+							<textarea placeholder="Description" class="description_input"></textarea><br/>
+							<button onclick="editPathDescription(this)">Submit</button>
+						</div>
+					</details></div>
+					<div id="comp_paths_list" class="list_div" style="border-style: none">
+
+					</div>
+					<script type="text/javascript">
+						// rename/edit description form functions
+						
+						function showRenamePathForm(ele){
+							const formEle = ele.closest(".comp_paths_list_item").querySelector(".rename_form");
+							clearForm(formEle);
+							formEle.style.display = "block";
+						}
+						async function renamePath(ele){
+							const parentEle = ele.closest(".comp_paths_list_item");
+							const idx = parentEle.querySelector(".id").value;
+							const formEle = parentEle.querySelector(".rename_form");
+							const name = formEle.querySelector(".name").value;
+
+							await fetchJson("/prompts/" + window.curPromptIdx.data + "/comp_paths/" + idx + '/rename', "PUT", {"name": name});
+
+							clearForm(formEle);
+							formEle.style.display = "none";
+
+							getCompPathsForPrompt();
+						}
+						function showEditPathDescriptionForm(ele){
+							const formEle = ele.closest(".comp_paths_list_item").querySelector(".edit_description_form");
+							clearForm(formEle);
+							formEle.style.display = "block";
+						}
+						async function editPathDescription(ele){
+							const parentEle = ele.closest(".comp_paths_list_item");
+							const idx = parentEle.querySelector(".id").value;
+							const formEle = parentEle.querySelector(".edit_description_form");
+							const description = formEle.querySelector(".description_input").value;
+
+							await fetchJson("/prompts/" + window.curPromptIdx.data + "/comp_paths/" + idx + '/rename', "PUT", {"description": description});
+
+							clearForm(formEle);
+							formEle.style.display = "none";
+
+							getCompPathsForPrompt();
+						}
+						// end rename/edit description form functions
+						async function getCompPathsForPrompt(curPromptIdx){
+							if(curPromptIdx == undefined){
+								curPromptIdx = window.curPromptIdx.data;
+							}
+							const compPathsList = (await fetchJson("/prompts/" + curPromptIdx + "/comp_paths")).json;
+							window.curPromptCompPathsInfo.update(compPathsList);
+						}
+						window.curPromptIdx.addSub(getCompPathsForPrompt);
+
+						function refreshCompPathsList(compPathsList){
+							const itemTemplate = $("#comp_paths_item_template");
+							const listNode = $("#comp_paths_list");
+							listNode.innerHTML = "";
+
+							if(compPathsList.length == 0){
+								listNode.innerHTML = "<p>Currently, no computational paths have been pinned to this prompt yet.</p>"
+							}
+							
+							for(const curInfo of compPathsList){
+								const newNode = itemTemplate.cloneNode(true);
+								newNode.removeAttribute("id");
+
+								newNode.querySelector('.id').value = curInfo['id'];
+								newNode.querySelector('.comp_path_name').innerText = curInfo['name'];
+								if(curInfo['is_outdated']){
+									newNode.querySelector(".outdated_marker").style.display = 'inline';
+								}
+
+								if(curInfo['description'] != null && curInfo['description'] != ''){
+									newNode.querySelector(".description").style.display = 'block';
+									newNode.querySelector(".description").innerText = curInfo['description'];
+								}
+
+								(function(){
+									const compPathId = curInfo['id'];
+									const promptId = window.curPromptIdx.data;
+									newNode.querySelector(".delete_path_button").onclick = async function(){
+										await fetchJson("/prompts/" + promptId + "/comp_paths/" + compPathId, "DELETE");
+										await getCompPathsForPrompt(promptId);
+									};
+
+									newNode.querySelector(".view_path_button").onclick = async function(){
+										showLoadingCompPathPlaceholder();
+										const newPathInfo = (await fetchJson("/prompts/" + promptId + '/comp_paths/' + compPathId, 'PUT')).json;
+										window.curCompPathInfo.update(newPathInfo);
+									};
+								})();
+
+								const nodeListEle = newNode.querySelector(".comp_path_nodes");
+								populateCompPathNodeList(curInfo, curInfo['cur_node_idx'], nodeListEle, curInfo['id']);
+
+								newNode.style.display = 'block';
+								listNode.appendChild(newNode);
+							}
+						}
+
+						window.curPromptCompPathsInfo.addSub(refreshCompPathsList);
+					</script>
+				</div>
+			</div>
+			<div style="flex: 1; margin-left: 0.5rem;">
+				<script type="text/javascript">
+					function populateFeatureInfo(new_node, cur_info){
+						new_node.querySelector('.name').innerText = cur_info['name'];
+
+						if(cur_info['description'] != undefined && cur_info['description'] != ''){
+							new_node.querySelector('.description').innerText = cur_info['description'];
+							new_node.querySelector(".description").style.display = 'block';
+						}
+						else {
+							new_node.querySelector(".description").style.display = 'none';
+						}
+
+						new_node.querySelector('.input_layer').innerText = cur_info['input_layer'].layer;
+						new_node.querySelector('.input_sublayer').innerText = cur_info['input_layer'].sublayer;
+						new_node.querySelector('.output_layer').innerText = cur_info['output_layer'].layer;
+						new_node.querySelector('.output_sublayer').innerText = cur_info['output_layer'].sublayer;
+
+						new_node.querySelector('.feature_type').innerText = cur_info['feature_type'];
+
+						if(cur_info['sae_info'] != undefined){
+							new_node.querySelector('.sae_name').innerText = cur_info['sae_info']['name'];
+							new_node.querySelector(".sae_name_wrap").style.display = 'block';
+						}
+						else {
+							new_node.querySelector(".sae_name_wrap").style.display = 'none';
+						}
+
+						if(cur_info['feature_idx'] != undefined){
+							new_node.querySelector('.feature_idx').innerText = cur_info['feature_idx'];
+							new_node.querySelector(".feature_idx_wrap").style.display = 'block';
+						}
+						else {
+							new_node.querySelector(".feature_idx_wrap").style.display = 'none';
+						}
+
+						if(cur_info['attn_head'] != undefined){
+							new_node.querySelector('.attn_head').innerText = cur_info['attn_head'];
+							new_node.querySelector(".attn_head_wrap").style.display = 'block';
+						}
+
+						if(cur_info['observable_tokens'] != undefined){
+							new_node.querySelector(".obs_tokens_wrap").style.display = 'block';
+							const obs_tokens = cur_info['observable_tokens'];
+							const obs_weights = cur_info['observable_weights'];
+							
+							new_node.querySelector(".obs_tokens").innerHTML = '';
+
+							for(var j = 0; j < obs_tokens.length; j++){
+								const curTokenEle = document.createElement('span');
+								curTokenEle.innerText = obs_weights[j];
+								curTokenEle.innerHTML += "&times;";
+								const curTokenContentsEle = document.createElement('code');
+								curTokenContentsEle.style.display = "inline";
+								curTokenContentsEle.classList.add("token_wrapper");
+								curTokenContentsEle.innerText = obs_tokens[j];
+								curTokenEle.appendChild(curTokenContentsEle);
+								new_node.querySelector(".obs_tokens").appendChild(curTokenEle);
+								if(j != obs_tokens.length - 1){
+									new_node.querySelector(".obs_tokens").innerHTML += ", ";
+								}
+							}
+						}
+						else {
+							new_node.querySelector(".obs_tokens_wrap").style.display = 'none';
+						}
+
+						if(cur_info['metadata_only']){
+							new_node.querySelector(".metadata_only").style.display = 'block';
+							const getActivsButton = 
+							new_node.querySelector(".get_activs_button");
+							if(getActivsButton != undefined){
+								getActivsButton.style.display = 'none';
+							}
+						}
+						else {
+							new_node.querySelector(".metadata_only").style.display = 'none';
+							const getActivsButton = 
+							new_node.querySelector(".get_activs_button");
+							if(getActivsButton != undefined){
+								getActivsButton.style.display = 'inline-block';
+							}
+						}
+					}
+					function refreshPromptFeatureList(data){
+						const item_template = $("#prompt_feature_list_template");
+						const list_node = $("#prompt_feature_list");
+						list_node.innerHTML = "";
+
+						if(data['features'].length == 0){
+							list_node.innerText = "No features have been added yet to this feature list."
+						}
+
+						for(var i = 0; i < data['features'].length; i++){
+							const cur_info = data['features'][i];
+
+							var new_node = item_template.cloneNode(true);
+							new_node.removeAttribute("id");
+
+							new_node.querySelector('.id').value = cur_info['id'];
+
+							// delete feature button
+							(function(){
+								const curFeatureId = cur_info['id'];
+								const curFeatureListId = data['id'];
+								new_node.querySelector(".delete_feature_button").onclick = async function(){
+									await fetchJson('/feature_lists/' + curFeatureListId + '/features/' + curFeatureId, 'DELETE');
+									await getCurPromptFeatureListInfo(curFeatureListId);
+								};
+							})();
+
+							populateFeatureInfo(new_node, cur_info);
+
+							new_node.style.display = 'block';
+							list_node.appendChild(new_node);
+						}
+					}
+
+					async function getFeatureActivsOnPrompt(button){
+						const feature_idx = button.closest(".prompt_feature_list_item").querySelector(".id").value;
+						const cur_prompt_idx = window.curPromptInfo.data['id'];
+						const feature_list_idx = window.curPromptInfo.data['cur_feature_list_idx'];
+						const activs_list = (await fetchJson('/prompts/' + cur_prompt_idx + '/feature_activs/feature_lists/' + feature_list_idx + '/features/' + feature_idx)).json;
+						const tokens_nodes = $("#prompt_view").querySelectorAll(".feature_activ");
+						for(var i = 0; i < activs_list.length; i++){
+							// i+1 to deal with template node
+							tokens_nodes[i+1].innerText = '(' + activs_list[i].toFixed(2) + ')';
+						}
+					}
+				</script>
+
+				<p>Feature list for prompt: <select id="prompt_feature_list_select"></select> <button onclick="changeCurFeatureListForPrompt()">Set</button></p>
+				<script>
+					// Whenever we load a new prompt/new feature list,
+					// we want to update the current index of the prompt feature list
+					window.curPromptFeatureListInfo.addSub(function(listInfo){
+						const allFeatureLists = window.allFeatureListsInfo.data;
+						for(var i = 0; i < allFeatureLists.length; i++){
+							if(allFeatureLists[i].id == listInfo.id){
+								$("#prompt_feature_list_select").selectedIndex = i;
+								break;
+							}
+						}
+					});
+
+
+					/* feature renaming functions */
+					
+					function showRenameFeatureForm(ele){
+						const formEle = ele.closest(".prompt_feature_list_item").querySelector(".rename_form");
+						clearForm(formEle);
+						formEle.style.display = "block";
+					}
+					async function renameFeature(ele){
+						const parentEle = ele.closest(".prompt_feature_list_item");
+						const idx = parentEle.querySelector(".id").value;
+						const formEle = parentEle.querySelector(".rename_form");
+						const name = formEle.querySelector(".name").value;
+
+						await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features/" + idx, "PUT", {"name": name});
+
+						clearForm(formEle);
+						formEle.style.display = "none";
+
+						await getCurPromptFeatureListInfo();
+					}
+					function showEditFeatureDescriptionForm(ele){
+						const formEle = ele.closest(".prompt_feature_list_item").querySelector(".edit_description_form");
+						clearForm(formEle);
+						formEle.style.display = "block";
+					}
+					async function editFeatureDescription(ele){
+						const parentEle = ele.closest(".prompt_feature_list_item");
+						const idx = parentEle.querySelector(".id").value;
+						const formEle = parentEle.querySelector(".edit_description_form");
+						const description = formEle.querySelector(".description_input").value;
+
+						await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features/" + idx, "PUT", {"description": description});
+
+						clearForm(formEle);
+						formEle.style.display = "none";
+
+						getCurPromptFeatureListInfo();
+					}
+
+					/* end feature renaming functions */
+
+					async function changeCurFeatureListForPrompt(){
+						const newFeatureListIdx = parseInt($('#prompt_feature_list_select').value, 10);
+						const curPromptIdx = window.curPromptIdx.data;
+						await fetchJson("/prompts/" + curPromptIdx + "/feature_list", "PUT", 
+							{
+								"feature_list_idx": newFeatureListIdx
+							}
+						);
+						// update prompt info because we updated its cur feature list idx
+						// TODO: do this client-side to avoid an extra request
+						await getCurPromptInfo();
+						await getCurPromptFeatureListInfo(newFeatureListIdx);
+					}
+
+					function refreshFeatureListSelect(select, data){
+						select.innerHTML = '';
+						for(var i = 0; i < data.length; i++){
+							const option = document.createElement("option");
+							const cur_info = data[i];
+							option.value = cur_info['id'];
+							option.innerText = cur_info['name'];
+							select.appendChild(option);
+						}
+					}
+
+					async function getAllFeatureListsInfo(){
+						window.allFeatureListsInfo.update((await fetchJson("/feature_lists")).json);
+					}
+
+					window.allFeatureListsInfo.addSub(
+						function (data) {
+							refreshFeatureListSelect(
+								$('#prompt_feature_list_select'), data
+							);
+						}
+					);
+					
+					getAllFeatureListsInfo();
+
+					window.curPromptFeatureListInfo.addSub(refreshPromptFeatureList);
+				</script>
+				{{ list_items.prompt_feature_list_item() }}
+				
+				<div id="prompt_feature_list" style="flex: 1" class="list_div"></div>
+				<div id="add_feature_div" class="small_div"><details>
+					<script type="text/javascript">
+						function updateSaesDropdowns(data){
+							// const sae_select = $("#add_sae_feature_div").querySelector(".sae_select");
+							const sae_selects = document.querySelectorAll(".sae_select");
+							for(const sae_select of sae_selects){
+								sae_select.innerHTML = '';
+							}
+							for(var i = 0; i < data.length; i++){
+								const sae_info = data[i];
+								const option = document.createElement("option");
+								option.value = sae_info['id'];
+								option.innerText = sae_info['short_name'];
+								for(const sae_select of sae_selects){
+									sae_select.appendChild(option.cloneNode(true));
+								}
+							}
+						}
+						window.saesInfo.addSub(updateSaesDropdowns);
+
+						function show_sae_or_observable_form(){
+							const add_feature_type_select = $('#add_feature_type_select');
+							const value = add_feature_type_select.value;
+							if(value == "sae"){
+								$('#add_sae_feature_div').style.display = 'block';
+								$('#add_observable_feature_div').style.display = 'none';
+							}
+							else if(value == "observable"){
+								$('#add_observable_feature_div').style.display = 'block';
+								$('#add_sae_feature_div').style.display = 'none';
+								if($("#add_observable_tokens").querySelectorAll(".add_observable_token").length == 0){
+									add_observable_token();
+								}
+							}
+							else {
+								$('#add_sae_feature_div').style.display = 'none';
+								$('#add_observable_feature_div').style.display = 'none';
+							}
+							
+							if(add_feature_type_select.selectedIndex > 0){
+								$("#add_feature_button").style.display = "inline";
+							}
+							else {
+								$("#add_feature_button").style.display = "none";
+							}
+						}
+
+						function add_observable_token(){
+							const listNode = $('#add_observable_tokens');
+							const itemNode = $("#add_observable_token_template");
+
+							const newItem = itemNode.cloneNode(true);
+							newItem.querySelector(".add_observable_token_input").value = "";
+							newItem.querySelector(".add_observable_token_weight").value = "";
+							newItem.removeAttribute("id");
+							newItem.style.display = "block";
+
+							listNode.appendChild(newItem);
+						}
+
+						function deleteObservableToken(ele){
+							const itemNode = ele.closest(".add_observable_token");
+							itemNode.parentNode.removeChild(itemNode);
+						}
+
+						function resetAddFeatureForm(){
+							$("#add_sae_feature_div").style.display = "none";
+							$("#add_observable_feature_div").style.display = "none";
+							$("#add_observable_tokens").innerHTML = "";
+							$("#add_sae_feature_div").querySelector(".sae_feature_idx").value = '';
+							$("#add_feature_type_select").value = "";
+							$("#add_feature_type_select").selectedIndex = 0;
+							$("#add_feature_div").querySelector(".feature_name").value = "";
+							$("#add_feature_div").querySelector(".feature_description").value = "";
+							$("#add_feature_button").style.display = "none";
+						}
+
+						async function addFeature(){
+							const errorMsg = $("#add_feature_error");
+							errorMsg.style.display = "none";
+
+							retdict = {}
+							const add_feature_div = $('#add_feature_div');
+							const addFeatureSelect = add_feature_div.querySelector("#add_feature_type_select");
+
+							retdict["feature_type"] = addFeatureSelect.value;
+							retdict["name"] = add_feature_div.querySelector(".feature_name").value;
+							retdict["description"] = add_feature_div.querySelector(".feature_description").value;
+
+							if(retdict["feature_type"] == "sae"){
+								// SAE-related stuff
+								const saeIdx = parseInt(add_feature_div.querySelector(".sae_select").value, 10);
+								retdict["sae_idx"] = saeIdx;
+								const featureIdx = parseInt(add_feature_div.querySelector(".sae_feature_idx").value, 10);
+								if(isNaN(featureIdx) || featureIdx < 0 || featureIdx > window.saesInfo.data[add_feature_div.querySelector(".sae_select").selectedIndex]['num_features']){
+									errorMsg.style.display = 'block';
+									errorMsg.innerText = 'Error: invalid dictionary feature index.';
+									return;
+								}
+
+								retdict["sae_feature_idx"] = featureIdx;
+							}
+							else if(retdict["feature_type"] == "observable"){
+								const observableTokensDiv = $("#add_observable_tokens");
+								const observableInputs = observableTokensDiv.querySelectorAll(".add_observable_token");
+								var obs_tokens = [];
+								var obs_weights = [];
+								for(const cur_input of observableInputs){
+									const obsToken = cur_input.querySelector(".add_observable_token_input").value;
+									obs_tokens.push(obsToken);
+									const obsWeightStr = cur_input.querySelector(".add_observable_token_weight").value;
+									const obsWeight = parseFloat(obsWeightStr);
+									if(isNaN(obsWeight)){
+										errorMsg.style.display = "block";
+										errorMsg.innerText = "Error: \"" + obsWeightStr + "\" is an invalid weight for token \"" + obsToken + "\".";
+										return;
+									}
+									obs_weights.push(obsWeight);
+								}
+
+								retdict['observable_tokens'] = obs_tokens;
+								retdict['observable_weights'] = obs_weights;
+								retdict['do_unembed_pullback'] = true;
+							}
+
+							resetAddFeatureForm();
+							const resp = await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features", "POST", retdict);
+							if(!isOk(resp)){
+								errorMsg.style.display = "block";
+								errorMsg.innerText = resp.json.error;
+								return;
+							}
+							await getCurPromptFeatureListInfo();
+							await getAllFeatureListsInfo();
+						}
+					</script>
+					<summary><b>Add a feature</b></summary>
+					<p id="add_feature_error" style="color: red; display: none"></p>
+					<p>Name: <input type="text" class="feature_name"/></p>
+					<p>Description: <input type="textarea" class="feature_description"/></p>
+					<p>Feature type:
+						<select id="add_feature_type_select" onchange="show_sae_or_observable_form()">
+							<option value="">---</option>
+							<option value="sae">Dictionary feature</option>
+							<option value="observable">Observable (measurement on logits)</option>
+						</select>
+					</p>
+					<div id="add_sae_feature_div" style="display: none">
+						<p id="add_sae_feature_placeholder">No dictionaries have been loaded yet. Load a dictionary first before adding a feature from one.</p>
+						<div id="add_sae_feature_wrapper" style="display: none">
+							<p>Dictionary to add feature from:
+								<select class="sae_select">
+								</select>
+							</p>
+							<p>Feature index: <input type="number" class="sae_feature_idx"/></p>
+						</div>
+						<script type="text/javascript">
+							window.saesInfo.addSub(function(saesInfo){
+								if(saesInfo.length == 0){
+									$("#add_sae_feature_placeholder").style.display = 'block';
+									$("#add_sae_feature_wrapper").style.display = 'none';
+								}
+								else {
+									$("#add_sae_feature_wrapper").style.display = 'block';
+									$("#add_sae_feature_placeholder").style.display = 'none';
+								}
+							});
+						</script>
+					</div>
+					<div id="add_observable_feature_div" style="display: none"> 
+						<p id="add_observable_token_template" class="add_observable_token" style="display: none">
+							Token:
+							<input type="text" class="add_observable_token_input"/>
+							 Weight:
+							<input type="text" class="add_observable_token_weight"/>
+							<button onclick="deleteObservableToken(this)">&#10006;</button>
+						</p>
+						<div id="add_observable_tokens">
+							
+						</div>
+						<button onclick="add_observable_token()">Add token</button><br/>
+					</div>
+					<p><button onclick="addFeature()" id="add_feature_button" style="display: none">Add feature</button></p>
+				</div>
+				<script type="text/javascript">
+					show_sae_or_observable_form();
+					resetAddFeatureForm();
+				</script>
+			</details></div>
+		</div>
+	</div>
+
+	<!-- token view -->
+	<div id="token_view" class="big_div">
+		<!-- current token window -->
+		<div id="token_view_wrapper">
+			<p>
+				Token <span id="cur_token_idx">N/A</span>: <span id="token_view_token_window">N/A</span>
+			</p>
+		
+			<div style="display: flex; justify-content: space-between;">
+				<div>
+					<div id="feature_activs_placeholder" style="display: none">
+						<p>Add features to the current feature list in order to view their activations on this token.</p>
+					</div>
+					<div id="feature_activs_wrapper">
+						<li id="feature_activ_template" style="display: none" class="clickable">
+							<span class="feature_name"></span>:
+							<span class="feature_activ"></span>
+							<input class="id" type="hidden"/>
+						</li>
+						<p>Feature activations:</p>
+						<ul id="feature_activs_list"></ul>
+					</div>
+				</div>
+				<div id="sae_activs_form">
+					<p id="sae_activs_placeholder">To get top dictionary features on the current token, first load some dictionaries.</p>
+					<div id="sae_activs_wrapper" class="small_div" style="display: none">
+						<p><b>Get top dictionary features on the current token</b></p>
+						<p>Dictionary: <select class="sae_select"></select></p>
+						<p><button onclick="getTopSaeActivs()">Get features</button></p>
+						<li id="sae_activs_template" style="display: none" class="sae_activs_template">
+							<span class="clickable feature_name_and_activ">
+								<span class="feature_name"></span>:
+								<span class="feature_activ"></span>
+							</span>
+							<input class="id" type="hidden"/>
+							<button class="add_to_feature_list_button">Add to feature list</button>
+						</li>
+						<ol id="top_sae_activs_list">
+
+						</ol>
+					</div>
+					<script type="text/javascript">
+						window.saesInfo.addSub(function(saesInfo){
+							if(saesInfo.length == 0){
+								$("#sae_activs_placeholder").style.display = "block";
+								$("#sae_activs_wrapper").style.display = "none";
+							}
+							else {
+								$("#sae_activs_wrapper").style.display = "block";
+								$("#sae_activs_placeholder").style.display = "none";
+							}
+						});
+						async function getTopSaeActivs(){
+							const promptIdx = window.curPromptInfo.data['id'];
+							const tokenPos = window.curTokenIdx.data;
+							const saeIdx = parseInt($("#sae_activs_form").querySelector(".sae_select").value, 10);
+							const activsInfo = (await fetchJson("/prompts/" + promptIdx + "/tokens/" + tokenPos + "/saes/" + saeIdx + "?k=7")).json;
+
+							const listNode = $("#top_sae_activs_list");
+							listNode.innerHTML = '';
+							const templateNode = $("#sae_activs_template");
+							
+							const scores = activsInfo['scores'];
+							const featureIdxs = activsInfo['feature_idxs'];
+							for(var i = 0; i < scores.length; i++){
+								const curScore = scores[i];
+								const featureIdx = parseInt(featureIdxs[i], 10);
+
+								const newNode = templateNode.cloneNode(true);
+								newNode.removeAttribute("id");
+								newNode.style.display = ""
+								newNode.querySelector(".feature_name").innerText = window.saesInfo.data[saeIdx]['short_name'] + '[' + featureIdx + ']@' + tokenPos;
+								newNode.querySelector(".feature_activ").innerText = curScore;
+
+								(function(){
+									const curSaeIdx = saeIdx;
+									const curFeatureIdx = featureIdx;
+									const curFeatureListIdx = window.curPromptFeatureListInfo.data['id'];
+									const curTokenPos = parseInt(tokenPos, 10);
+
+									newNode.querySelector(".add_to_feature_list_button").onclick = async function(){
+										const retdict = {};
+										retdict['feature_type'] = 'sae';
+										retdict['sae_idx'] = curSaeIdx;
+										retdict['sae_feature_idx'] = curFeatureIdx;
+
+										await fetchJson("/feature_lists/" + curFeatureListIdx + "/features", "POST", retdict);
+										await getCurPromptFeatureListInfo();
+										await getAllFeatureListsInfo();
+									};
+
+									const childDict = {};
+									childDict['component_type'] = 'SAE_FEATURE';
+									childDict['sae_idx'] = curSaeIdx;
+									childDict['feature_idx'] = curFeatureIdx;
+									childDict['token_pos'] = curTokenPos;
+									newNode.querySelector(".feature_name_and_activ").onclick = async function(){
+										showLoadingCompPathPlaceholder();
+										const newPathInfo = (await fetchJson("/prompts/" + promptIdx + '/comp_paths/default/replace', 'POST', childDict)).json;
+										window.curCompPathInfo.update(newPathInfo);
+									};
+								})();
+
+								listNode.appendChild(newNode);
+							}
+						}
+						window.curTokenIdx.addSub(function(tokenIdx){$("#top_sae_activs_list").innerHTML = '';});
+					</script>
+				</div>
+			</div>
+		</div>
+		<div id="token_view_noprompt_placeholder" style="display: none">
+			<p>To view token information, run a prompt first.</p>
+		</div>
+		<div id="token_view_notoken_placeholder" style="display: none">
+			<p>No token has currently been selected.</p>
+			<p>To view token information, click on a token.</p>
+		</div>
+
+		<script type="text/javascript">
+			function displayTokenPlaceholder(promptInfo, tokenIdx){
+				const tokenViewWrapper = $("#token_view_wrapper");
+				const noPrompt = $("#token_view_noprompt_placeholder");
+				const noToken = $("#token_view_notoken_placeholder");
+
+				if(promptInfo.tokens.length == 0){
+					tokenViewWrapper.style.display = 'none';
+					noToken.style.display = 'none';
+					noPrompt.style.display = 'block';
+				}
+				else if(tokenIdx == null){
+					tokenViewWrapper.style.display = 'none';
+					noToken.style.display = 'block';
+					noPrompt.style.display = 'none';
+				}
+				else {
+					tokenViewWrapper.style.display = 'block';
+					noToken.style.display = 'none';
+					noPrompt.style.display = 'none';	
+				}
+			}
+			window.curPromptInfo.addSub(function(promptInfo){
+				displayTokenPlaceholder(promptInfo, window.curTokenIdx.data);
+			});
+			window.curPromptIdx.addSub(function(){
+				window.curTokenIdx.update(null);
+			});
+			window.curTokenIdx.addSub(function(tokenIdx){
+				displayTokenPlaceholder(window.curPromptInfo.data, tokenIdx);
+			});
+			
+			function displayTokenWindow(prompt_tokens, tokenIdx, windowSize=undefined, tokens=undefined, isClickable=true){
+				if(windowSize === undefined){
+					windowSize = 5;
+				}
+				if(tokens === undefined){
+					tokens = window.curPromptInfo.data['tokens'];
+				}
+				
+				const windowLeft = Math.max(0,tokenIdx-windowSize);
+				const windowRight = Math.min(tokens.length,tokenIdx+windowSize);
+				const curTokens = tokens.slice(windowLeft, windowRight);
+
+				const prompt_template = $("#prompt_token_template");
+				prompt_tokens.innerHTML = '';
+				for(var i = 0; i < curTokens.length; i++){
+					const curToken = curTokens[i];
+					const new_node = prompt_template.cloneNode(true);
+					new_node.removeAttribute("id");
+					new_node.querySelector('.token').innerText = curToken;
+					new_node.style.display='inline';
+					(function(){
+						const curIdx = i + windowLeft;
+						if(isClickable){
+							new_node.onclick = function(event){
+								setCurToken(curIdx);
+							};
+						}
+					})();
+
+					if(i + windowLeft == tokenIdx) { new_node.style.fontWeight = 'bold'; new_node.style.backgroundColor = '#bdb'; }
+					prompt_tokens.appendChild(new_node);
+				}
+			}
+
+			function setCurToken(tokenIdx){
+				$("#cur_token_idx").innerText = tokenIdx;
+				displayTokenWindow($("#token_view_token_window"), tokenIdx);
+				$("#token_view").scrollIntoView(true);
+				window.curTokenIdx.update(tokenIdx);
+			}
+
+			async function getCurFeatureListActivsOnToken(tokenIdx){
+				const promptIdx = window.curPromptInfo.data['id'];
+				const featureListIdx = window.curPromptFeatureListInfo.data['id'];
+
+				if(window.curPromptFeatureListInfo.data.features.length == 0){
+					$("#feature_activs_placeholder").style.display = 'block';
+					$("#feature_activs_wrapper").style.display = 'none';
+				}
+				else{
+					$("#feature_activs_placeholder").style.display = 'none';
+					$("#feature_activs_wrapper").style.display = 'block';
+				}
+
+				if(tokenIdx == null){ return; }
+
+				const featureListActivs = (await fetchJson('/prompts/' + promptIdx + '/tokens/' + tokenIdx + '/feature_lists/' + featureListIdx)).json;
+
+				const listNode = $("#feature_activs_list");
+				listNode.innerHTML = "";
+				const itemTemplate = $("#feature_activ_template");
+				for(const activ of featureListActivs){
+					const newNode = itemTemplate.cloneNode(true);
+					newNode.removeAttribute("id");
+
+					newNode.querySelector(".feature_name").innerText = activ['name'];
+					newNode.querySelector(".feature_activ").innerText = activ['activation'];
+					newNode.querySelector(".id").value = activ['id'];
+
+					// capture current tokenIdx, activation
+					(function(){
+						const curTokenPos = tokenIdx;
+						const curId = activ['id'];
+						newNode.onclick = function(){
+							setCurCompPathToFeature(curTokenPos, curId);
+						};
+					})();
+
+					newNode.style.display = 'list-item';
+					listNode.appendChild(newNode);
+				}
+			}
+			window.curTokenIdx.addSub(function(tokenIdx){
+				getCurFeatureListActivsOnToken(tokenIdx);
+			});
+			window.curPromptFeatureListInfo.addSub(function(featureListInfo){
+				getCurFeatureListActivsOnToken(window.curTokenIdx.data);
+			});
+
+		</script>
+	</div>
+
+	<!-- computational path stuff -->
+	<div id="comp_path_view" class="big_div">
+		<div id="comp_path_info">
+			<p id="comp_path_name_wrapper"><b id="comp_path_name"></b></p>
+			<p id="comp_path_description_wrapper"><span id="comp_path_description"></span></p>
+
+			<p id="comp_path_nodes"></p>
+			<p><span id="comp_path_token_window"></span></p>
+			<p id="comp_path_outdated_notice" style="display:none; color: red"><b>OUTDATED:</b> This computational path comes from an earlier version of this prompt. Its attributions do not correspond to the most recently-updated version of this prompt.</p>
+
+			<p><b id="comp_path_node_name"></b></p>
+			<div id="comp_path_node_description_wrapper" onclick="showEditCompPathNodeDescriptionForm()">
+				<div id="comp_path_node_description_placeholder" style="display: none" class="description_placeholder">
+					Click to add a description
+				</div>
+				<div id="comp_path_node_description" class="description"></div>
+			</div>
+			<div id="edit_comp_path_node_description_form" style="display: none">
+				<textarea class="description_input" onfocusout="unfocusEditCompPathNodeDescriptionForm()" placeholder="Description"></textarea><button onclick="editCompPathNodeDescription()">Submit</button>
+			</div>
+			<script type="text/javascript">
+				function showEditCompPathNodeDescriptionForm(){
+					$("#comp_path_node_description_wrapper").style.display = "none";
+					$("#edit_comp_path_node_description_form").style.display = "flex";
+					const nameEle = $("#edit_comp_path_node_description_form").querySelector(".description_input")
+					nameEle.value = $("#comp_path_node_description").innerText;
+					nameEle.focus();
+				}
+
+				function unfocusEditCompPathNodeDescriptionForm(){
+					//stupid hack
+					// shoutouts to someone on SO for this
+					setTimeout(hideEditCompPathNodeDescriptionForm, 100);
+				}
+
+				function hideEditCompPathNodeDescriptionForm(){
+					$("#comp_path_node_description_wrapper").style.display = "block";
+					$("#edit_comp_path_node_description_form").style.display = "none";
+				}
+
+				async function editCompPathNodeDescription(){
+					const description = $("#edit_comp_path_node_description_form").querySelector(".description_input").value;
+					
+					const formDict = {"description": description};
+					await fetchJson("/prompts/" + window.curPromptIdx.data + "/comp_paths/default/nodes/" + window.curCompPathNodeIdx.data + "/rename", "PUT", formDict);
+
+					showLoadingCompPathPlaceholder();
+					const newPathInfo = (await fetchJson("/prompts/" + window.curPromptIdx.data + '/comp_paths/default/nodes/' + window.curCompPathNodeIdx.data, 'PUT')).json;
+					window.curCompPathInfo.update(newPathInfo);
+
+					$("#edit_comp_path_node_description_form").querySelector(".description_input").value = "";
+
+					hideEditCompPathNodeDescriptionForm();
+				}
+			</script>
+
+			<script type="text/javascript">
+				function populateCompPathNodeList(pathInfo, curNodeIdx, nodeListEle, compPathIdx="default", reload=false){
+					if(compPathIdx != "default"){ reload = true; }
+					const nodes = pathInfo['nodes'];
+					if(curNodeIdx < 0) {
+						curNodeIdx = nodes.length + curNodeIdx;
+					}
+					const isOutdated = pathInfo['is_outdated'];
+					nodeListEle.innerHTML = '';
+					for(var i = 0; i < nodes.length; i++){
+						const node = nodes[i];
+						const newNode = document.createElement('span');
+						newNode.classList.add("clickable");
+
+						const tokenPosText = isOutdated ? '<span style="background-color: #ddd; font-family: monospace">' + escapeHTML(pathInfo['outdated_token_strs'][node['token_pos']]) + '</span>' : escapeHTML(node['token_pos']);
+						newNode.innerHTML = escapeHTML(node['name']) + '@' + tokenPosText + ': ' + escapeHTML(node["total_attrib"].toFixed(3)) + " ";
+						if(i == curNodeIdx){
+							newNode.innerHTML = '<b>' + newNode.innerHTML + '</b>';
+							if(!isOutdated){
+								displayTokenWindow($("#comp_path_token_window"), node['token_pos']);
+							}
+							else {
+								displayTokenWindow($("#comp_path_token_window"), node['token_pos'], iwindowSize=undefined, tokens=pathInfo['outdated_token_strs'], isClickable=false);
+							}
+						}
+						if(i != nodes.length-1) {
+							newNode.innerHTML = newNode.innerHTML + ' &#8592; ';
+						}
+						if(!isOutdated){
+							// onclick event to go backwards in computational path
+							(function(){
+								const featurePos = i;
+								const promptIdx = window.curPromptInfo.data['id'];
+								const curCompPathIdx = compPathIdx;
+								if(reload){
+									newNode.onclick = async function(){
+										showLoadingCompPathPlaceholder();
+										const newPathInfo = (await fetchJson("/prompts/" + promptIdx + '/comp_paths/' + compPathIdx + '/nodes/' + featurePos, 'PUT')).json;
+										window.curCompPathInfo.update(newPathInfo);
+									}
+								}
+								else {
+									newNode.onclick = async function(){
+										window.curCompPathNodeIdx.update(featurePos);
+									}
+								}
+							})();
+							// when you hover, the corresponding token in the prompt view lights up
+							(function(){
+								const curTokenPos = node['token_pos'];
+								const promptToken = $("#prompt_tokens").querySelectorAll(".prompt_token")[parseInt(curTokenPos, 10)];
+								newNode.onmouseover = function() {
+									promptToken.style['background-color'] = '#bdb';
+								}
+								newNode.onmouseout = function(){
+									promptToken.style['background-color'] = '';
+								}
+							})();
+						}
+						else if(!reload){
+							(function(){
+								const featurePos = i;
+								newNode.onclick = async function(){
+									window.curCompPathNodeIdx.update(featurePos);
+								}
+							})();
+						}
+						else {
+							newNode.classList.remove("clickable");
+						}
+
+						nodeListEle.appendChild(newNode);
+					}
+				}
+
+				function showLoadingCompPathPlaceholder(){
+					document.body.style.cursor = 'wait';
+					$("#loading_comp_path_placeholder").style.display = 'block';
+					$("#comp_path_info").style.display = 'none';
+					$("#comp_path_placeholder").style.display = 'none';
+				}
+
+				function viewNodeInCompPath(curNodeIdx){
+					$("#top_deembedding_wrapper").style.display = 'none';
+					$("#top_input_invar_wrapper").style.display = 'none';
+
+					const pathInfo = window.curCompPathInfo.data;
+					const attribEle = $("#comp_path_attr");
+					const curNode = pathInfo['nodes'][curNodeIdx]
+
+					if(curNode.description == null || curNode.description == ""){
+						$("#comp_path_node_description_placeholder").style.display = 'block';
+						$("#comp_path_node_description").style.display = 'none';
+					}
+					else {
+						$("#comp_path_node_description").style.display = 'block';
+						$("#comp_path_node_description_placeholder").style.display = 'none';
+						$("#comp_path_node_description").innerText = curNode.description;
+					}
+
+					attribEle.querySelector(".total_invar_factor").innerText = curNode['total_invar_factor'];
+					attribEle.querySelector(".total_parent_ln_constant").innerHTML =curNode['total_parent_ln_constant'];
+					attribEle.querySelector(".total_attn_factor").innerText =curNode['total_attn_factor'];
+					attribEle.querySelector(".total_attrib").innerText =curNode['total_attrib'];
+	;
+					attribEle.querySelector(".feature_activ").innerText = curNode['feature_activ'];
+					attribEle.querySelector(".invar_factor").innerText =  curNode['invar_factor'];
+					attribEle.querySelector(".parent_ln_constant").innerText = curNode['parent_ln_constant'];
+					attribEle.querySelector(".attn_factor").innerText = curNode['attn_factor'];
+
+					// now, list the most important child components for our node
+
+					const isOutdated = pathInfo['is_outdated'];
+					if(!isOutdated){
+						$("#important_children").style.display = 'block';
+						//const topChildren = pathInfo['top_children'];
+						const topChildren = curNode['top_children'];
+						const childListEle = $("#important_children_list");
+						childListEle.innerHTML = '';
+						for(const curChild of topChildren){
+							const newNode = document.createElement("li");
+							
+							var childStr = "";
+							if(curChild['component_type'] == 'SAE_FEATURE'){
+								const saeName = window.saesInfo.data[curChild['sae_idx']]['short_name'];
+								const featureIdx = curChild['feature_idx'];
+								childStr = childStr + saeName + "[" + featureIdx + "]";
+							}
+							else if(curChild['component_type'] == 'ATTN_HEAD'){
+								childStr = childStr + 'attn' + curChild['attn_layer'] + '[' + curChild['attn_head'] + ']';
+							}
+							else if(curChild['component_type'] == 'EMBED'){
+								childStr = childStr + 'embed[' + curChild['embed_vocab_idx'] + ']';
+							}
+					
+							childStr = childStr + '@' + curChild['token_pos'] + ': ' + curChild['contrib'];
+
+							newNode.innerText = childStr;
+							// click on each child to extend the current computational path
+							(function(){
+								const promptIdx = window.curPromptInfo.data['id'];
+								const childDict = curChild;
+								newNode.onclick = async function(){
+									showLoadingCompPathPlaceholder();
+									const newPathInfo = (await fetchJson("/prompts/" + promptIdx + '/comp_paths/default/nodes/' + curNodeIdx + '/extend', 'POST', childDict)).json;
+									window.curCompPathInfo.update(newPathInfo);
+								}
+							})();
+							// when you hover over a child, the corresponding token in the prompt view lights up
+							(function(){
+								const curTokenPos = curChild['token_pos'];
+								const promptToken = $("#prompt_tokens").querySelectorAll(".prompt_token")[parseInt(curTokenPos, 10)];
+								newNode.onmouseover = function() {
+									promptToken.style['background-color'] = '#bdb';
+								}
+								newNode.onmouseout = function(){
+									promptToken.style['background-color'] = '';
+								}
+							})();
+
+							newNode.classList.add("clickable");
+							childListEle.appendChild(newNode);
+						}
+					}
+					else {
+						$("#important_children").style.display = 'none';
+					}
+
+					for(var i = 0; i < $("#comp_path_nodes").childNodes.length; i++){
+						const curNodeListEle = $("#comp_path_nodes").childNodes[i];
+						if(curNodeListEle.querySelectorAll('b').length == 1){
+							const boldEle = curNodeListEle.querySelector('b');
+							boldEle.outerHTML = boldEle.innerHTML;
+						}
+						if(i == curNodeIdx){
+							curNodeListEle.innerHTML = '<b>' + curNodeListEle.innerHTML + '</b>'
+						}
+					}
+
+					populateCompPathNodeList(window.curCompPathInfo.data, curNodeIdx, $("#comp_path_nodes"));
+
+					populateFeatureInfo($("#cur_comp_path_feature_info"), curNode);
+				}
+
+				function viewCompPath(pathInfo){
+					document.body.style.cursor = '';
+					$("#loading_comp_path_placeholder").style.display = 'none';
+					if(pathInfo['nodes'].length == 0){
+						$("#comp_path_info").style.display = 'none';
+						$("#comp_path_placeholder").style.display = 'block';
+						return;
+					}
+					else {
+						$("#comp_path_placeholder").style.display = 'none';
+						$("#comp_path_info").style.display = 'block';
+					}
+					// display name and description
+					if(pathInfo['name'] != "" && pathInfo['name'] != undefined){
+						$("#comp_path_name_wrapper").style.display = 'block';
+						$("#comp_path_name").innerText = pathInfo['name'];
+					}
+					else {
+						$("#comp_path_name_wrapper").style.display = 'none';
+					}
+					if(pathInfo['description'] != "" && pathInfo['description'] != undefined){
+						$("#comp_path_description_wrapper").style.display = 'block';
+						$("#comp_path_description").innerText = pathInfo['description'];
+					}
+					else {
+						$("#comp_path_description_wrapper").style.display = 'none';
+					}
+
+					// check if path is outdated
+					const isOutdated = pathInfo['is_outdated'];
+					if(isOutdated){
+						$("#comp_path_outdated_notice").style.display = "block";
+					}
+					else {
+						$("#comp_path_outdated_notice").style.display = "none";
+					}
+					// first, list all the nodes in the computational path
+					const nodeListEle = $("#comp_path_nodes");
+					const nodes = pathInfo['nodes'];
+					
+					var curNodeIdx = pathInfo['cur_node_idx'];
+					if(curNodeIdx < 0) {
+						curNodeIdx = nodes.length + curNodeIdx;
+					}
+					populateCompPathNodeList(pathInfo, curNodeIdx, nodeListEle);
+
+					// next, list attribution for current node
+					window.curCompPathNodeIdx.update(curNodeIdx);
+
+					$("#comp_path_view").scrollIntoView(true);
+				}
+
+				async function setCurCompPathToFeature(tokenPos, featureIdx){
+					const promptIdx = window.curPromptInfo.data['id'];
+					showLoadingCompPathPlaceholder();
+					await fetchJson("/prompts/" + promptIdx + '/tokens/' + tokenPos + '/features/' + featureIdx + '/set_current_path', "PUT");	
+					const pathInfo = (await fetchJson("/prompts/" + promptIdx + "/comp_paths/default", "PUT")).json;
+					window.curCompPathInfo.update(pathInfo);
+				}
+
+				// load current computational path
+				async function getCurCompPath(promptIdx){
+					showLoadingCompPathPlaceholder();
+					// check if we even have any computational paths loaded
+					const pathInfo = (await fetchJson("/prompts/" + promptIdx + "/comp_paths/default", "PUT")).json;
+					window.curCompPathInfo.update(pathInfo);
+				}
+
+				window.curPromptIdx.addSub(getCurCompPath);
+				window.curCompPathInfo.addSub(viewCompPath);
+				window.curCompPathNodeIdx.addSub(viewNodeInCompPath);
+			</script>
+
+			<div style="display: flex;">
+				<div style="flex: 1">
+					{{ misc_widgets.comp_path_attr() }}
+
+					<div id="important_children" class="small_div special">
+						<p><b>Most important upstream features:</b></p>
+						<ol id="important_children_list"></ol>
+					</div>
+				</div>
+				<div style="flex: 1" class="small_div">
+					<p>Information about current feature: </p>
+					{{ list_items.prompt_feature_list_item(id="cur_comp_path_feature_info", hidden=false, show_buttons=false) }}
+				</div>
+			</div>
+
+			<div style="display: flex">
+				<!-- pin computational path -->
+				<div id="comp_path_save_form" class="small_div">
+					<p><b>Pin this computational path:</b></p>
+					<p>Name: <input type="text" class="comp_path_name" placeholder="Name"/></p>
+					<p><textarea class="comp_path_description" placeholder="Description" style="width: 100%"></textarea></p>
+					<p><button onclick="saveCurComputationalPath()">Pin</button></p>
+					<script type="text/javascript">
+						async function saveCurComputationalPath(){
+							const formEle = $("#comp_path_save_form");
+							const name = formEle.querySelector(".comp_path_name").value;
+							const description = formEle.querySelector(".comp_path_description").value;
+							const curPromptIdx = window.curPromptIdx.data;
+							await fetchJson("/prompts/" + curPromptIdx + "/comp_paths", "POST", {"name": name, "description": description});
+							await getCompPathsForPrompt();
+						}
+					</script>
+				</div>
+
+				<!-- add feature to feature list -->
+				<div id="add_feature_from_comp_path_form" class="small_div">
+					<p><b>Add to current feature list</b></p>
+					<p>Name: <input class="name" type="text" placeholder="Name"/></p>
+					<p><textarea class="description_input" placeholder="Description" style="width: 100%"></textarea></p>
+					<button onclick="addFeatureFromCompPath()">Add</button>
+					<script type="text/javascript">
+						async function addFeatureFromCompPath(){
+							const formEle = $("#add_feature_from_comp_path_form");
+							const name = formEle.querySelector(".name").value;
+							const description = formEle.querySelector(".description_input").value;
+							const postDict = {}
+							if(name != ""){
+								postDict.name = name;
+							}
+							if(description != ""){
+								postDict.description = description;
+							}
+							const promptIdx = window.curPromptInfo.data['id'];
+							await fetchJson("/prompts/" + promptIdx +"/comp_paths/default/nodes/" + window.curCompPathNodeIdx.data + "/add_to_feature_list", "POST", postDict);
+							clearForm($("#add_feature_from_comp_path_form"));
+							await getCurPromptFeatureListInfo();
+						}
+					</script>
+				</div>
+
+				<!-- De-embeddings view -->
+				<div class="small_div">
+					<p><b>Get top de-embeddings for feature</b></p>
+					<button onclick="getTopDeembeddings()">Get de-embeddings</button>
+					<div id="top_deembedding_wrapper" style="display: none">
+						<p>Top de-embeddings for this feature:</p>
+						<ol id="top_deembedding_list">
+
+						</ol>
+					</div>
+					<script type="text/javascript">
+						async function getTopDeembeddings(){
+							const promptIdx = window.curPromptInfo.data['id'];
+							const deembeddings = (await fetchJson("/prompts/" + promptIdx + "/comp_paths/default/nodes/" + window.curCompPathNodeIdx.data + "/deembeddings")).json;
+
+							$("#top_deembedding_wrapper").style.display = 'block';
+							const listNode = $("#top_deembedding_list");
+							listNode.innerHTML = '';
+							
+							const scores = deembeddings['scores'];
+							const tokens = deembeddings['tokens'];
+							for(var i = 0; i < scores.length; i++){
+								const curScore = scores[i];
+								const curToken = tokens[i];
+
+								const newNode = document.createElement('li');
+								newNode.innerHTML = '<pre style="background-color: #ddd; display: inline;">' + escapeHTML(curToken) + "</pre>: " + escapeHTML(curScore);
+
+								listNode.appendChild(newNode);
+							}
+						}
+
+						window.curCompPathInfo.addSub(function(pathInfo){$("#top_deembedding_wrapper").style.display = 'none';});
+						window.curCompPathInfo.addSub(function(pathInfo){$("#top_input_invar_wrapper").style.display = 'none';});
+					</script>
+				</div>
+
+				<!-- Input-invariant features -->
+				<div class="small_div">
+					<p><b>Get top input-invariant features from a dictionary</b></p>
+					<p>Dictionary: <select class="sae_select" id="input_invar_sae_select"></select></p>
+					<button onclick="getTopInputInvarFeatures()">Get top features</button>
+					<div id="top_input_invar_wrapper" style="display: none">
+						<p>Top input-invariant features:</p>
+						<ol id="top_input_invar_list">
+
+						</ol>
+					</div>
+					<script type="text/javascript">
+						async function getTopInputInvarFeatures(){
+							const promptIdx = window.curPromptInfo.data['id'];
+							const input_invars = (await fetchJson("/prompts/" + promptIdx + "/comp_paths/default/nodes/" + window.curCompPathNodeIdx.data + "/input_invar?sae_idx=" + $("#input_invar_sae_select").value)).json;
+
+							$("#top_input_invar_wrapper").style.display = 'block';
+							const listNode = $("#top_input_invar_list");
+							listNode.innerHTML = '';
+							
+							const scores = input_invars['scores'];
+							const features = input_invars['feature_idxs'];
+							for(var i = 0; i < scores.length; i++){
+								const curScore = scores[i];
+								const curFeature = features[i];
+
+								const newNode = document.createElement('li');
+								newNode.innerHTML = '<pre style="background-color: #ddd; display: inline;">' + escapeHTML(curFeature) + "</pre>: " + escapeHTML(curScore);
+								newNode.classList.add("clickable");
+
+								(function(){
+									const saeIdx = parseInt($("#input_invar_sae_select").value, 10);
+									const featureIdx = curFeature;
+									newNode.onclick = async function(){
+										const resp = await fetchJson('/feature_lists/' + window.curPromptFeatureListInfo.data.id + "/features", "POST", {'sae_idx': saeIdx, 'sae_feature_idx': featureIdx, 'feature_type': 'sae'});
+										if(isOk(resp)){
+											await getCurPromptFeatureListInfo();
+										}
+									}
+								})();
+
+								listNode.appendChild(newNode);
+							}
+						}
+
+						window.curCompPathInfo.addSub(function(pathInfo){$("#top_deembedding_wrapper").style.display = 'none';});
+					</script>
+				</div>
+			</div>
+		</div>
+		<div id="comp_path_placeholder" style="display: none">
+			<p>No computational path is currently selected.</p>
+			<p>Click on a computational path to view more information about it.</p>
+		</div>
+		<div id="loading_comp_path_placeholder" style="display: none">
+			Loading computational path....
+		</div>
+	</div>
+	</div> <!-- this div is the "main_dashboard_elements" div -->
+</body>
+</html>

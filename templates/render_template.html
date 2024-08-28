@@ -1,0 +1,13 @@
+{% import 'templates/render_core.html' as render_core %}
+
+<html>
+<head>
+<style>
+{% include 'style.css' %}
+</style>
+</head>
+
+<body> 
+{{ render_core.render_core(sess) }}
+</body>
+</html>

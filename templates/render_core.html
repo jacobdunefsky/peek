@@ -1,0 +1,219 @@
+{% import 'templates/list_items.html' as list_items %}
+{% import 'templates/misc_widgets.html' as misc_widgets %}
+
+{% macro render_core(sess, sess_info_div_html=none) %}
+
+<script type="text/javascript">
+	function $(q) { return document.querySelector(q); };
+
+	function hideAllPrompts(){
+		const prompts = document.querySelectorAll('[data-prompt-idx]');
+		for(const promptEle of prompts){
+			promptEle.style.display = 'none';
+		}
+		$("#prompt_placeholder").style.display = 'none';
+	}
+	function viewPrompt(promptIdx){
+		hideAllPrompts();
+		const curPrompt = $("[data-prompt-idx='" + promptIdx + "']");
+		curPrompt.style.display = '';
+	}
+
+	function hideAllCompPaths(){
+		const compPaths = document.querySelectorAll('[data-comp-path-idx]');
+		for(const compPath of compPaths){
+			compPath.style.display = 'none';
+		}
+	}
+	function hideAllNodes(compPathEle){
+		const nodes = compPathEle.querySelectorAll('[data-comp-path-node-idx]');
+		for(const node of nodes){
+			node.style.display = 'none';
+		}
+	}
+
+	function viewCompPath(promptIdx, pathIdx, nodeIdx){
+		hideAllCompPaths();
+
+		const curPrompt = $("[data-prompt-idx='" + promptIdx + "']");
+
+		const curCompPath = curPrompt.querySelector("[data-comp-path-idx='" + pathIdx + "']");
+		hideAllNodes(curCompPath);
+
+		curCompPath.style.display = '';
+		const curNode = curCompPath.querySelector('[data-comp-path-node-idx="' + nodeIdx + '"]');
+		curNode.style.display = '';
+	}
+</script>
+
+<div id="session_info_div" class="big_div">
+	<!-- session name -->
+	<h1 id="session_name">{{ sess.name }}</h1>
+	
+	<!-- session description -->
+	{% if sess.description != "" and sess.description is not none %} 
+		<div id="session_description" class="description">{{ sess.description }}</div>
+	{% endif %}
+	
+	{% if sess_info_div_html is not none %}
+		{{ sess_info_div_html }}
+	{% endif %}
+
+	<br/>
+
+	<hr/>
+	<div id="session_info_tabs" style="margin-bottom: 1rem;">
+		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('model_info_div');" id="model_info_div_session_info_tab">Model info</span>
+		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('saes_div');" id="saes_div_session_info_tab">Dictionaries</span>
+		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('prompts_div');" id="prompts_div_session_info_tab">Prompts</span>
+		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('feature_lists_div');" id="feature_lists_div_session_info_tab">Feature lists</span>
+	</div>
+	<div id="model_info_div">
+		{% set model_name=sess.model_info.name %}
+		{% set model_n_layers=sess.model_info.n_layers %}
+		{% set model_n_params=sess.model_info.n_params %}
+		<div id="loaded_model_info_div">
+			<p><b>Model name:</b> <span id="model_name">{{model_name}}</span></p>
+			<p><b>Number of layers:</b> <span id="model_n_layers">{{model_n_layers}}</span></p>
+			<p><b>Parameter count:</b> <span id="model_n_params">{{model_n_params}}</span></p>
+		</div>
+	</div>
+
+	<div id="saes_div">
+		<!-- SAE list -->
+		<div id="saes_list_div" class="list_div" style="border-width: 1px; border-style: solid">
+			{% for sae_info in sess.sae_list.dict.values() %}
+				{{ list_items.sae_list_item(sae_info) }}
+			{% endfor %}
+		</div>
+	</div>
+
+	<div id="prompts_div">
+		<div id="prompts_list" class="list_div" style="border-style: solid; border-width: 1px">
+			{% for prompt_idx, prompt in sess.prompt_list.dict.items() %}
+				{% set view_button %}
+					<button onclick="viewPrompt({{prompt_idx}})">View</button>
+				{% endset %}
+				{{ list_items.prompt_list_item(prompt, static_right_header_col=view_button) }}
+			{% endfor %}
+		</div>
+	</div>
+
+	<div id="feature_lists_div">
+		<div id="feature_lists_list" class="list_div" style="border-style: solid; border-width: 1px">
+			{% for feature_list in sess.all_feature_lists.dict.values() %}
+				{{ list_items.feature_lists_list_item(feature_list) }}
+			{% endfor %}
+		</div>
+	</div>
+
+	<script type="text/javascript">
+		const allSessionInfoTabIds = ["model_info_div", "saes_div", "prompts_div", "feature_lists_div"];
+		function switchSessionInfoTab(newTabId){
+			for(const curTabId of allSessionInfoTabIds){
+				const ele = $("#" + curTabId);
+				const tabEle = $("#" + curTabId + "_session_info_tab");
+				if(curTabId != newTabId) {
+					ele.style.display = 'none';
+					tabEle.style.fontWeight = 'normal';
+					tabEle.style.backgroundColor = "";
+				}
+				else {
+					ele.style.display = 'block';
+					tabEle.style.fontWeight = 'bold';
+					tabEle.style.backgroundColor = "#bdb";
+				}
+			}
+		}
+		
+		switchSessionInfoTab("model_info_div");
+	</script>
+</div>
+
+<div class="big_div" id="prompt_placeholder">
+	<h3>No prompt currently viewed.</h3>
+	<p>To view a prompt, first go to the <a href="javascript:switchSessionInfoTab('prompts_div');">Prompts tab</a> to see a list of all prompts. Then, click on the "View" button next to a prompt to view it.</p>
+</div>
+
+{% for prompt_idx, prompt in sess.prompt_list.dict.items() %}
+<div class="big_div" data-prompt-idx="{{prompt_idx}}" style="display: none">
+	<div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+		<div style="flex: 1; margin-right: 0.5rem;">
+			<p class="prompt_name">{{prompt.name}}</p>
+			{% if prompt.description is not none %}
+				<div class="description">{{prompt.description}}</div>
+			{% else %}
+				<div>This prompt has not been given a description.</div>
+			{% endif %}
+
+			<div class="special small_div">
+				{% if prompt.tokens == [] %}
+					<p>This prompt hasn't been run.</p>
+				{% else %}
+					{% for token in prompt.tokens %}{{misc_widgets.display_token(token, clickable=false)}}{% endfor %}
+				{% endif %}
+			</div>
+		</div>
+	</div>
+	<div class="list_div" style="border-width: 1px; border-style: solid">
+		{% if prompt.comp_paths.dict|length != 0 %}
+			<p>Computational paths: </p>
+			{% for path_idx, path_info in prompt.comp_paths.dict.items() %}
+				{% set view_button %}
+					<button onclick="viewCompPath({{prompt_idx}}, {{path_idx}}, 0)">View</button>
+				{% endset %}
+				{% set onclick %}(function(x){viewCompPath({{prompt_idx}}, {{path_idx}}, x)}){% endset %}
+				{{ list_items.comp_paths_list_item(path_info, static_right_header_col=view_button, onclick=onclick) }}
+			{% endfor %}
+		{% else %}
+			<p>No computational paths have been pinned to this prompt.</p>
+		{% endif %}
+	</div>
+
+	<hr/>
+
+	{% for path_idx, path_info in prompt.comp_paths.dict.items() %}
+		<div class="small_div" style="display: none;" data-comp-path-idx='{{path_idx}}'>
+			<h3>{{path_info.name}}</h3>
+			{% if path_info.description is not none and path_info.description != "" %}
+				<div class="description">{{ path_info.description }}</div>
+			{% endif %}
+
+			{% for node in path_info.nodes %}
+			<div class="small_div" style="display: none;" data-comp-path-node-idx="{{loop.index-1}}">
+			<div style="display: flex;">
+				<div style="flex: 1">
+					{% set onclick %}(function(x){viewCompPath({{prompt_idx}}, {{path_idx}}, x)}){% endset %}
+					<p>{{ misc_widgets.display_comp_path_nodes(path_info, node_idx=loop.index-1, onclick=onclick) }}</p>
+
+					{% set window_size = 3 %}
+					{% set window_left = max(0, node.token_pos-window_size) %}
+					{% set window_right = min(prompt.tokens|length, node.token_pos+window_size) %}
+					<div>
+						{% for i in range(window_left, window_right) %}
+							{% set highlight_token = (i == node.token_pos) %}
+							{{ misc_widgets.display_token(prompt.tokens[i], highlight_token=highlight_token, clickable=false) }}
+						{% endfor %}
+					</div>
+
+					{% if node.description is not none and node.description != "" %}
+						<div class="description">{{ node.description }}</div>
+					{% endif %}
+
+					{{ misc_widgets.comp_path_attr(node) }}
+				</div>
+
+				<div style="flex: 1">
+					<p>Information about current feature: </p>
+					{{ list_items.prompt_feature_list_item(node.feature_info) }}
+				</div>
+			</div>
+			</div>
+			{% endfor %}
+		</div>
+	{% endfor %}
+</div>
+{% endfor %}
+
+
+{% endmacro %}
