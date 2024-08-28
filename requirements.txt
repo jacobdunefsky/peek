@@ -1,7 +1,7 @@
 Flask==3.0.3
 huggingface_hub==0.17.3
 Jinja2==3.1.4
-numpy==1.13.3
-safetensors==0.4.4
+numpy==1.26.4
+safetensors==0.4.3
 torch==2.2.0
-transformer_lens==2.4.0
+transformer_lens==1.11.0
