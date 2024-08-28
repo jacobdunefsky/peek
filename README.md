@@ -10,16 +10,31 @@ To install Peek, first make sure that Python 3 >= 3.10 is installed on your mach
 
 ``git clone https://github.com/jacobdunefsky/peek.git peek``
 
-Enter the downloaded repository with `cd peek`. Then, install the required Python packages:
+Enter the downloaded repository with `cd peek`.
+
+To avoid dependency conflicts with your other Python packages, you might want to install Peek into a virtual environment. To do so, type the following commands:
+
+``python3 -m venv peek_venv``
+
+``source peek_venv/bin/activate``
+
+This will activate the new virtual environment.
+
+Now, install the required Python packages:
 
 ``python3 -m pip install -r requirements.txt``
 
 You now should be good to go!
 
-
 # Running Peek
 
-To run the Peek server, `cd` into the directory where you installed Peek. Then, run the following command:
+To run the Peek server, `cd` into the directory where you installed Peek.
+
+If you installed Peek with a virtual environment, then run the command
+
+``source peek_venv/bin/activate``
+
+Now, run the following command:
 
 ``python3 server.py``
 
