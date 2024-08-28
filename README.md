@@ -1,6 +1,6 @@
 # [Peek](https://peekai.org): a tool and platform for peeking inside large language models
 
-Peek is a program that lets you investigate why LLMs do what they do without writing any code. If you are interested in a specific behavior of an LLM -- e.g. "How does my model know that the capital of England is London and not Paris", or "What would cause my model to use the word 'thou' and not 'thee'?" -- then with a couple of clicks, you can find *features* inside the model that are responsible for that behavior. 
+Peek is a program that lets you investigate why LLMs do what they do without writing any code. If you are interested in a specific behavior of an LLM -- e.g. "How does my model know that the capital of England is London and not Paris", or "What would cause my model to use the word 'thou' and not 'you'?" -- then with a couple of clicks, you can find *features* inside the model that are responsible for that behavior. 
 
 Peek also comes with a companion website: [peekai.org](https://peekai.org). Once you've performed an investigation, you can share your findings on [peekai.org](https://peekai.org) and view other people's findings there as well. 
 
