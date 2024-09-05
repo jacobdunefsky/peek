@@ -391,7 +391,7 @@ class FeatureInfo:
 		feature.encoder_vector = sae.W_enc[:, feature_idx].clone().detach().to(device=device)
 		#feature.encoder_bias = (sae.b_enc[feature_idx] - (sae.b_dec @ sae.W_enc)[feature_idx]).item()
 		feature.encoder_bias = sae.b_enc[feature_idx].item()
-		feature.decoder_vector = sae.W_dec[feature_idx].clone().detach().to(device='device')
+		feature.decoder_vector = sae.W_dec[feature_idx].clone().detach().to(device=device)
 
 		feature.input_layer = sae_info.input_layer
 		feature.output_layer = sae_info.output_layer
