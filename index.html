@@ -1604,13 +1604,29 @@
 
 								(function(){
 									const saeIdx = parseInt($("#input_invar_sae_select").value, 10);
+
+									const promptIdx = window.curPromptInfo.data['id'];
 									const featureIdx = curFeature;
-									newNode.onclick = async function(){
+									const curNodeIdx = window.curCompPathNodeIdx.data;
+									const tokenPos = window.curCompPathInfo.data.nodes[curNodeIdx].token_pos;  
+									const childDict = {
+										'component_type': 'SAE_FEATURE',
+										'sae_idx': saeIdx,
+										'feature_idx': curFeature,
+										'token_pos': tokenPos
+									};
+
+									/* newNode.onclick = async function(){
 										const resp = await fetchJson('/feature_lists/' + window.curPromptFeatureListInfo.data.id + "/features", "POST", {'sae_idx': saeIdx, 'sae_feature_idx': featureIdx, 'feature_type': 'sae'});
 										if(isOk(resp)){
 											await getCurPromptFeatureListInfo();
 										}
-									}
+									} */
+									newNode.onclick = async function(){
+										showLoadingCompPathPlaceholder();
+										const newPathInfo = (await fetchJson("/prompts/" + promptIdx + '/comp_paths/default/nodes/' + curNodeIdx + '/extend', 'POST', childDict)).json;
+										window.curCompPathInfo.update(newPathInfo);
+									} 
 								})();
 
 								listNode.appendChild(newNode);
