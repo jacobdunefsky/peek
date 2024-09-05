@@ -1814,7 +1814,7 @@ class Session:
 	def list_info_for_all_saes(self):
 		retlist = []
 		with self.sae_list.lock:
-			for idx, sae_info in self.sae_list.dict.items():
+			for idx, sae_info in sorted(self.sae_list.dict.items(), key=lambda x: x[1].input_layer):
 				retval = {**sae_info.serialize(), **sae_info.sae.cfg.serialize()}
 				retval['id'] = idx
 				print(retval)

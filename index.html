@@ -975,6 +975,7 @@
 							const promptIdx = window.curPromptInfo.data['id'];
 							const tokenPos = window.curTokenIdx.data;
 							const saeIdx = parseInt($("#sae_activs_form").querySelector(".sae_select").value, 10);
+							const saeListPos = $("#sae_activs_form").querySelector(".sae_select").selectedIndex;
 							const activsInfo = (await fetchJson("/prompts/" + promptIdx + "/tokens/" + tokenPos + "/saes/" + saeIdx + "?k=7")).json;
 
 							const listNode = $("#top_sae_activs_list");
@@ -990,7 +991,7 @@
 								const newNode = templateNode.cloneNode(true);
 								newNode.removeAttribute("id");
 								newNode.style.display = ""
-								newNode.querySelector(".feature_name").innerText = window.saesInfo.data[saeIdx]['short_name'] + '[' + featureIdx + ']@' + tokenPos;
+								newNode.querySelector(".feature_name").innerText = window.saesInfo.data[saeListPos]['short_name'] + '[' + featureIdx + ']@' + tokenPos;
 								newNode.querySelector(".feature_activ").innerText = curScore;
 
 								(function(){
@@ -1342,7 +1343,16 @@
 							
 							var childStr = "";
 							if(curChild['component_type'] == 'SAE_FEATURE'){
-								const saeName = window.saesInfo.data[curChild['sae_idx']]['short_name'];
+								// TODO: convert saesInfo to dict to avoid O(n) lookup
+								var saeName = '';
+								for(const curSaeInfo of window.saesInfo.data){
+									if(curSaeInfo.id == curChild['sae_idx']){
+										saeName = curSaeInfo['short_name'];
+										break;
+									}
+								}
+
+								//const saeName = window.saesInfo.data[curChild['sae_idx']]['short_name'];
 								const featureIdx = curChild['feature_idx'];
 								childStr = childStr + saeName + "[" + featureIdx + "]";
 							}
@@ -1586,7 +1596,10 @@
 					<script type="text/javascript">
 						async function getTopInputInvarFeatures(){
 							const promptIdx = window.curPromptInfo.data['id'];
-							const input_invars = (await fetchJson("/prompts/" + promptIdx + "/comp_paths/default/nodes/" + window.curCompPathNodeIdx.data + "/input_invar?sae_idx=" + $("#input_invar_sae_select").value)).json;
+
+							const saeIdx = parseInt($("#input_invar_sae_select").value, 10);
+
+							const input_invars = (await fetchJson("/prompts/" + promptIdx + "/comp_paths/default/nodes/" + window.curCompPathNodeIdx.data + "/input_invar?sae_idx=" + saeIdx)).json;
 
 							$("#top_input_invar_wrapper").style.display = 'block';
 							const listNode = $("#top_input_invar_list");
