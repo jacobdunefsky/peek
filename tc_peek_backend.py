@@ -2209,6 +2209,7 @@ class Session:
 				cur_node_idx = len(prompt.cur_comp_path.nodes) + cur_node_idx
 			prompt.cur_comp_path.nodes = prompt.cur_comp_path.nodes[:cur_node_idx+1] + [new_attrib]
 		else:
+			prompt.cur_comp_path = ComputationalPath("")
 			prompt.cur_comp_path.nodes = [new_attrib]
 
 		prompt.cur_comp_path.name = ""
