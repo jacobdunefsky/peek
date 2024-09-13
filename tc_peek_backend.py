@@ -1609,7 +1609,7 @@ class Prompt:
 		attn_head = new_attrib.feature_info.attn_head
 		if attn_head is not None and old_attrib is not None:
 			new_attrib.attn_factor = cache[
-				f'blocks.{child.attn_layer}.attn.hook_pattern'
+				f'blocks.{new_attrib.feature_info.input_layer.layer}.attn.hook_pattern'
 			][0, attn_head, old_attrib.token_pos, new_attrib.token_pos].item()
 
 		# get feature activ
@@ -2281,8 +2281,8 @@ class Session:
 		for node in all_attribs:
 			nodedict = copy.copy(self._get_feature_info_dict(node.feature_info))
 			nodedict = {**nodedict, **node.serialize_base()}
-			if nodedict.unsteered_attrib is not None:
-				nodedict['unsteered_attrib'] = nodedict.unsteered_attrib.serialize_base()
+			if node.unsteered_attrib is not None:
+				nodedict['unsteered_attrib'] = node.unsteered_attrib.serialize_base()
 			else:
 				nodedict['unsteered_attrib'] = None
 
@@ -2481,7 +2481,7 @@ class Session:
 			feature_info=feature,
 			token_pos=attrib.token_pos,
 			coefficient=steering_coefficient,
-			do_clamp=do_clamp
+			do_clamp=do_clamp,
 			name=name if name is not None else feature.name,
 			description=description if description is not None else feature.description
 		)
