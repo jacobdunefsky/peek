@@ -127,7 +127,7 @@
 </head>
 <body>
 	<!-- header -->
-	<div class="header" style="position: sticky; top: 0;">
+	<div id="header" class="header" style="position: sticky; top: 0; box-shadow: 0px 2px 2px gray; padding-top: 2px; padding-bottom: 2px;">
 		<div style="flex: 1; display: flex; align-items: center; gap: inherit">
 			<p style="font-size: 30pt">Peek</a>
 		</div>
@@ -1815,5 +1815,13 @@
 	</div>
 
 	</div> <!-- this last div is the "main_dashboard_elements" div -->
+
+	<script type="text/javascript">
+		// at the very end, here's some code for doing scrolling with the header
+		const headerHeight = $("#header").getBoundingClientRect().height;
+		for(const ele of document.querySelectorAll(".big_div")){
+			ele.style.scrollMarginTop = headerHeight + 'px';
+		}
+	</script>
 </body>
 </html>
