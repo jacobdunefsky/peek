@@ -1183,19 +1183,31 @@ class SteeringVector:
 	def make_hooks(self):
 		hooks = []
 		feature_activ = 0.0
-		def in_hook(hidden_state, hook_name):
+		def in_hook(hidden_state, hook):
 			if self.do_clamp:
 				nonlocal feature_activ
-				feature_activ = self.feature_info.get_activs(
-					hidden_state[0, self.token_pos] #TODO: allow for batching?
-				)
-		def out_hook(hidden_state, hook_name):
-			hidden_state[:, self.token_pos] += self.decoder_vector * (self.coefficient - feature_activ)
+				if self.token_pos is not None:
+					feature_activ = self.feature_info.get_activs(
+						hidden_state[0, self.token_pos] #TODO: allow for batching?
+					)
+				else:
+					feature_activ = self.feature_info.get_activs(
+						hidden_state[0] #TODO: allow for batching?
+					)
+		def out_hook(hidden_state, hook):
+			if self.token_pos is not None:
+				hidden_state[:, self.token_pos] += self.feature_info.decoder_vector * (self.coefficient - feature_activ)
+			else:
+				print(f'out hook feature_activ: {feature_activ}')
+				if self.do_clamp:
+					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.decoder_vector, self.coefficient - feature_activ)
+				else:
+					hidden_state[0] += self.feature_info.decoder_vector * self.coefficient
 			return hidden_state
 
 		return [
-			(self.feature_info.input_layer.to_hookpoint_str, in_hook),
-			(self.feature_info.output_layer.to_hookpoint_str, out_hook)
+			(self.feature_info.input_layer.to_hookpoint_str(), in_hook),
+			(self.feature_info.output_layer.to_hookpoint_str(), out_hook)
 		]
 
 ###
@@ -1333,17 +1345,22 @@ class Prompt:
 	
 	@no_grad()
 	def run_with_steering_vectors(self, model : HookedTransformer):
+		print(f'How many steering vectors: {len(self.steering_vectors.dict)}')
 		with self.lock:
 			if len(self.steering_vectors.dict) == 0:
+				self.cache = self.unsteered_cache
+				self.logits = self.unsteered_logits
 				self.unsteered_logits = None
 				self.unsteered_cache = None
+				print("No more steering vectors.")
 			else:
+				print(len(self.steering_vectors.dict))
 				hooks = []
 				for steering_vector in self.steering_vectors.dict.values():
 					hooks.extend(steering_vector.make_hooks())
 
 				with model.hooks(fwd_hooks=hooks):
-					logits, cache = model.run_with_cache(self.tokens, return_type='logits')
+					logits, cache = model.run_with_cache("".join(self.tokens), return_type='logits', prepend_bos=False)
 
 				if self.unsteered_logits is None:
 					self.unsteered_logits = self.logits
@@ -1643,7 +1660,7 @@ class Prompt:
 					feature_info=new_attrib.feature_info,
 					token_pos=new_attrib.token_pos
 				)
-				self.populate_attrib_info(new_attrib, old_attrib, use_unsteered=True)
+				new_attrib.unsteered_attrib = self.populate_attrib_info(new_attrib.unsteered_attrib, old_attrib.unsteered_attrib if old_attrib is not None else None, use_unsteered=True)
 			elif self.unsteered_cache is None and new_attrib.unsteered_attrib is not None:
 				# all steering vectors have been removed from the prompt, but new_attrib hasn't been updated to reflect this
 
@@ -1697,14 +1714,14 @@ class Prompt:
 
 		return new_attrib
 	
-	def add_steering_vector(self, steering_vector):
+	def add_steering_vector(self, model, steering_vector):
 		idx = self.steering_vectors.add(steering_vector)
-		self.run_with_steering_vectors()
+		self.run_with_steering_vectors(model)
 		return idx
 	
-	def remove_steering_vector(self, steering_vector_id):
+	def remove_steering_vector(self, model, steering_vector_id):
 		self.steering_vectors.remove(steering_vector_id)
-		self.run_with_steering_vectors()
+		self.run_with_steering_vectors(model)
 
 @dataclass
 class ModelInfo:
@@ -2467,29 +2484,29 @@ class Session:
 	
 	# SteeringVector-related methods
 	
-	def add_steering_vector_from_comp_path_to_prompt(self, prompt_idx, path_idx, steering_coefficient, feature_pos=-1, do_clamp=True, name=None, description=None):
+	def add_steering_vector_from_comp_path_to_prompt(self, prompt_idx, comp_path_idx, steering_coefficient, feature_pos=-1, do_clamp=True, name=None, description=None, all_tokens=False):
 		prompt = self.prompt_list.dict[prompt_idx]
-		if path_idx is None:
+		if comp_path_idx is None:
 			comp_path = prompt.cur_comp_path
 		else:
-			comp_path = prompt.comp_paths.dict[path_idx]
+			comp_path = prompt.comp_paths.dict[comp_path_idx]
 
 		attrib = comp_path.nodes[feature_pos]
 		feature = attrib.feature_info
 
 		steering_vector = SteeringVector(
 			feature_info=feature,
-			token_pos=attrib.token_pos,
+			token_pos=attrib.token_pos if not all_tokens else None,
 			coefficient=steering_coefficient,
 			do_clamp=do_clamp,
 			name=name if name is not None else feature.name,
 			description=description if description is not None else feature.description
 		)
 
-		return prompt.add_steering_vector(steering_vector)
+		return prompt.add_steering_vector(self.model, steering_vector)
 	
 	def remove_steering_vector(self, prompt_idx, steering_vector_idx):
-		self.prompt_list.dict[prompt_idx].steering_vectors.remove(steering_vector_idx)
+		self.prompt_list.dict[prompt_idx].remove_steering_vector(self.model, steering_vector_idx)
 	
 	def list_steering_vectors_for_prompt(self, prompt_idx):
 		retlist = []
@@ -2497,6 +2514,7 @@ class Session:
 		with prompt.steering_vectors.lock:
 			for idx, steering_vector in prompt.steering_vectors.dict.items():
 				retdict = {
+					'id': idx,
 					'name': steering_vector.name,
 					'description': steering_vector.description,
 

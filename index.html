@@ -74,9 +74,12 @@
 	window.curPromptIdx = new DataPub();
 	window.curPromptInfo = new DataPub();
 	window.curPromptFeatureListInfo = new DataPub();
+	window.curPromptSteeringVectorsInfo = new DataPub();
+
 	window.curCompPathInfo = new DataPub();
 	window.curCompPathNodeIdx = new DataPub();
 	window.curPromptCompPathsInfo = new DataPub();
+	window.jumpToCompPathAfterLoading = false;
 
 	window.curTokenIdx = new DataPub();
 
@@ -227,9 +230,6 @@
 
 							getCurCompPath(window.curPromptIdx.data);
 							getCompPathsForPrompt(window.curPromptIdx.data);
-
-
-
 						}
 
 						async function getCurPromptInfo(curPromptIdx){
@@ -479,6 +479,7 @@
 
 									newNode.querySelector(".view_path_button").onclick = async function(){
 										showLoadingCompPathPlaceholder();
+										window.jumpToCompPathAfterLoading = true;
 										const newPathInfo = (await fetchJson("/prompts/" + promptId + '/comp_paths/' + compPathId, 'PUT')).json;
 										window.curCompPathInfo.update(newPathInfo);
 									};
@@ -915,7 +916,92 @@
 					show_sae_or_observable_form();
 					resetAddFeatureForm();
 				</script>
-			</details></div>
+			</details>
+			<!-- below is the div for steering vectors.
+			TODO: actually finish this. -->
+			<div class="small_div">
+				<script type="text/javascript">
+					async function getSteeringVectorsForPrompt(curPrompt){
+						var curPromptIdx;
+						if(curPrompt == undefined){
+							curPromptIdx = window.curPromptIdx.data;
+						}
+						else {
+							curPromptIdx = curPrompt.id;
+						}
+						const steeringVectorsList = (await fetchJson("/prompts/" + curPromptIdx + "/steering_vectors")).json;
+						window.curPromptSteeringVectorsInfo.update(steeringVectorsList);
+					}
+					window.curPromptInfo.addSub(getSteeringVectorsForPrompt);
+
+					function refreshSteeringVectorsList(data){
+						const item_template = $("#steering_vectors_list_template");
+						const list_node = $("#steering_vectors_list");
+						list_node.innerHTML = "";
+
+						if(data.length == 0){
+							list_node.innerText = "No steering vectors are currently in use."
+						}
+
+						for(var i = 0; i < data.length; i++){
+							const cur_info = data[i];
+
+							var new_node = item_template.cloneNode(true);
+							new_node.removeAttribute("id");
+
+							new_node.querySelector('.id').value = cur_info['id'];
+
+							populateFeatureInfo(new_node, cur_info['feature_info']);
+							new_node.querySelector('.coefficient').innerText = cur_info['coefficient'];
+							new_node.querySelector('.token_pos').innerText = cur_info['token_pos'];
+							new_node.querySelector('.do_clamp').innerText = cur_info['do_clamp'];
+
+							new_node.style.display = 'block';
+							list_node.appendChild(new_node);
+						}
+					}
+
+					async function deleteSteeringVector(ele){
+						const parentEle = ele.closest(".steering_vectors_list_item");
+						const idx = parentEle.querySelector(".id").value;
+						const resp = await fetchJson("/prompts/" + window.curPromptIdx.data + "/steering_vectors/" + idx, "DELETE");
+						if(isOk(resp)){
+							await getCurPromptInfo();
+							window.curTokenIdx.broadcast();
+							await getSteeringVectorsForPrompt();
+						}
+					}
+
+					window.curPromptSteeringVectorsInfo.addSub(refreshSteeringVectorsList);
+				</script>
+				<p> Steering vectors for current prompt: </p>
+				<div id="steering_vectors_list_template" class="list_item steering_vectors_list_item" style="display: none"><details class="list_details">
+					<summary class="clickable" style="display: flex">
+						<span style="flex: 1"><span class="name"></span></span>
+						<span style="flex: 1; text-align: right; margin-right: 5%"><button onclick="deleteSteeringVector(this)">Delete</button></span>
+					</summary>
+					<input class="id" type="hidden"/>
+					<p class="description" style="display:none"></p>
+					<p>Steering strength: <span class="coefficient"></span></p>
+					<p>Token: <span class="token_pos"></span></p>
+					<p>Uses clamp-style steering? <span class="do_clamp"></span></p>
+					<details class="list_details small_div">
+						<summary class="clickable">Feature vector details</summary>
+						<p class="metadata_only" style="display: none; color: red">(<b>Metadata only: </b>Only the metadata of this feature has been saved. Finding computational paths with this feature or getting this feature's activation is unavailable.)</p>
+						<p><b>Input layer:</b> Layer <span class="input_layer"></span> <span class="input_sublayer"></span></p>	
+						<p><b>Output layer:</b> Layer <span class="output_layer"></span> <span class="output_sublayer"></span></p>	
+						<p><b>Feature type:</b> <span class="feature_type"></span></p>
+
+						<p class="sae_name_wrap" style="display:none"><b>Feature comes from dictionary "</b><span class="sae_name"></span><b>"</b></p>
+						<p class="feature_idx_wrap" style="display:none"><b>Feature index:</b> <span class="feature_idx"></span></p>
+						<p class="attn_head_wrap" style="display:none"><b>Attention head:</b> <span class="attn_head"></span></p>
+						<div class="obs_tokens_wrap" style="display:none"><b>Logit tokens/weights:</b> <div class="obs_tokens" style="display: inline-block"></div></div>
+					</details>
+				</details></div>
+				<div id="steering_vectors_list" class="list_div"></div>
+			</div>
+
+			</div>
 		</div>
 	</div>
 
@@ -1018,6 +1104,7 @@
 									childDict['token_pos'] = curTokenPos;
 									newNode.querySelector(".feature_name_and_activ").onclick = async function(){
 										showLoadingCompPathPlaceholder();
+										window.jumpToCompPathAfterLoading = true;
 										const newPathInfo = (await fetchJson("/prompts/" + promptIdx + '/comp_paths/default/replace', 'POST', childDict)).json;
 										window.curCompPathInfo.update(newPathInfo);
 									};
@@ -1256,6 +1343,7 @@
 								if(reload){
 									newNode.onclick = async function(){
 										showLoadingCompPathPlaceholder();
+										window.jumpToCompPathAfterLoading = true;
 										const newPathInfo = (await fetchJson("/prompts/" + promptIdx + '/comp_paths/' + compPathIdx + '/nodes/' + featurePos, 'PUT')).json;
 										window.curCompPathInfo.update(newPathInfo);
 									}
@@ -1319,15 +1407,15 @@
 						$("#comp_path_node_description").innerText = curNode.description;
 					}
 
-					attribEle.querySelector(".total_invar_factor").innerText = curNode['total_invar_factor'];
-					attribEle.querySelector(".total_parent_ln_constant").innerHTML =curNode['total_parent_ln_constant'];
-					attribEle.querySelector(".total_attn_factor").innerText =curNode['total_attn_factor'];
-					attribEle.querySelector(".total_attrib").innerText =curNode['total_attrib'];
+					attribEle.querySelector(".total_invar_factor").innerText = curNode['total_invar_factor'].toPrecision(4);
+					attribEle.querySelector(".total_parent_ln_constant").innerHTML =curNode['total_parent_ln_constant'].toPrecision(4);
+					attribEle.querySelector(".total_attn_factor").innerText =curNode['total_attn_factor'].toPrecision(4);
+					attribEle.querySelector(".total_attrib").innerText =curNode['total_attrib'].toPrecision(4);
 	;
-					attribEle.querySelector(".feature_activ").innerText = curNode['feature_activ'];
-					attribEle.querySelector(".invar_factor").innerText =  curNode['invar_factor'];
-					attribEle.querySelector(".parent_ln_constant").innerText = curNode['parent_ln_constant'];
-					attribEle.querySelector(".attn_factor").innerText = curNode['attn_factor'];
+					attribEle.querySelector(".feature_activ").innerText = curNode['feature_activ'].toPrecision(4);
+					attribEle.querySelector(".invar_factor").innerText =  curNode['invar_factor'].toPrecision(4);
+					attribEle.querySelector(".parent_ln_constant").innerText = curNode['parent_ln_constant'].toPrecision(4);
+					attribEle.querySelector(".attn_factor").innerText = curNode['attn_factor'].toPrecision(4);
 
 					// now, list the most important child components for our node
 
@@ -1372,6 +1460,7 @@
 								const childDict = curChild;
 								newNode.onclick = async function(){
 									showLoadingCompPathPlaceholder();
+									window.jumpToCompPathAfterLoading = true;
 									const newPathInfo = (await fetchJson("/prompts/" + promptIdx + '/comp_paths/default/nodes/' + curNodeIdx + '/extend', 'POST', childDict)).json;
 									window.curCompPathInfo.update(newPathInfo);
 								}
@@ -1461,12 +1550,16 @@
 					// next, list attribution for current node
 					window.curCompPathNodeIdx.update(curNodeIdx);
 
-					$("#comp_path_view").scrollIntoView(true);
+					if(window.jumpToCompPathAfterLoading){
+						$("#comp_path_view").scrollIntoView(true);
+					}
+					window.jumpToCompPathAfterLoading = false;
 				}
 
 				async function setCurCompPathToFeature(tokenPos, featureIdx){
 					const promptIdx = window.curPromptInfo.data['id'];
 					showLoadingCompPathPlaceholder();
+					window.jumpToCompPathAfterLoading = true;
 					await fetchJson("/prompts/" + promptIdx + '/tokens/' + tokenPos + '/features/' + featureIdx + '/set_current_path', "PUT");	
 					const pathInfo = (await fetchJson("/prompts/" + promptIdx + "/comp_paths/default", "PUT")).json;
 					window.curCompPathInfo.update(pathInfo);
@@ -1500,10 +1593,12 @@
 				</div>
 			</div>
 
-			<div style="display: flex">
+			<div style="display: flex; flex-direction: column;">
 				<!-- pin computational path -->
-				<div id="comp_path_save_form" class="small_div">
-					<p><b>Pin this computational path:</b></p>
+				<div id="comp_path_save_form" class="small_div"><details>
+					<summary>
+					<b>Pin this computational path:</b>
+					</summary>
 					<p>Name: <input type="text" class="comp_path_name" placeholder="Name"/></p>
 					<p><textarea class="comp_path_description" placeholder="Description" style="width: 100%"></textarea></p>
 					<p><button onclick="saveCurComputationalPath()">Pin</button></p>
@@ -1517,11 +1612,13 @@
 							await getCompPathsForPrompt();
 						}
 					</script>
-				</div>
+				</details></div>
 
 				<!-- add feature to feature list -->
-				<div id="add_feature_from_comp_path_form" class="small_div">
-					<p><b>Add to current feature list</b></p>
+				<div id="add_feature_from_comp_path_form" class="small_div"><details>
+					<summary>
+					<b>Add to current feature list</b>
+					</summary>
 					<p>Name: <input class="name" type="text" placeholder="Name"/></p>
 					<p><textarea class="description_input" placeholder="Description" style="width: 100%"></textarea></p>
 					<button onclick="addFeatureFromCompPath()">Add</button>
@@ -1543,11 +1640,12 @@
 							await getCurPromptFeatureListInfo();
 						}
 					</script>
-				</div>
+				</details></div>
 
 				<!-- De-embeddings view -->
-				<div class="small_div">
-					<p><b>Get top de-embeddings for feature</b></p>
+				<div class="small_div"><details>
+					<summary>
+					<b>Get top de-embeddings for feature</b>					</summary>
 					<button onclick="getTopDeembeddings()">Get de-embeddings</button>
 					<div id="top_deembedding_wrapper" style="display: none">
 						<p>Top de-embeddings for this feature:</p>
@@ -1580,11 +1678,13 @@
 						window.curCompPathInfo.addSub(function(pathInfo){$("#top_deembedding_wrapper").style.display = 'none';});
 						window.curCompPathInfo.addSub(function(pathInfo){$("#top_input_invar_wrapper").style.display = 'none';});
 					</script>
-				</div>
+				</details></div>
 
 				<!-- Input-invariant features -->
-				<div class="small_div">
-					<p><b>Get top input-invariant features from a dictionary</b></p>
+				<div class="small_div"><details>
+					<summary>
+					<b>Get top input-invariant features from a dictionary</b>
+					</summary>
 					<p>Dictionary: <select class="sae_select" id="input_invar_sae_select"></select></p>
 					<button onclick="getTopInputInvarFeatures()">Get top features</button>
 					<div id="top_input_invar_wrapper" style="display: none">
@@ -1637,6 +1737,7 @@
 									} */
 									newNode.onclick = async function(){
 										showLoadingCompPathPlaceholder();
+										window.jumpToCompPathAfterLoading = true;
 										const newPathInfo = (await fetchJson("/prompts/" + promptIdx + '/comp_paths/default/nodes/' + curNodeIdx + '/extend', 'POST', childDict)).json;
 										window.curCompPathInfo.update(newPathInfo);
 									} 
@@ -1648,7 +1749,46 @@
 
 						window.curCompPathInfo.addSub(function(pathInfo){$("#top_deembedding_wrapper").style.display = 'none';});
 					</script>
-				</div>
+				</details></div>
+
+				<!-- add feature as steering_vector -->
+				<div id="add_steering_vector_form" class="small_div"><details>
+					<summary>
+					<b>Add a steering vector</b>
+					</summary>
+					<p>Name: <input class="name" type="text" placeholder="Name"/></p>
+					<p><textarea class="description_input" placeholder="Description" style="width: 100%"></textarea></p>
+					<p>Steering strength: <input class="steering_coefficient" type="number" step="any" value="1.0"/></p>
+					<p>Use clamp-style steering? <input class="do_clamp" type="checkbox"/></p>
+					<p>Steer on all tokens? <input class="all_tokens" type="checkbox"/></p>
+					<button onclick="addSteeringVector()">Add</button>
+					<script type="text/javascript">
+						async function addSteeringVector(){
+							const formEle = $("#add_steering_vector_form");
+							const name = formEle.querySelector(".name").value;
+							const description = formEle.querySelector(".description_input").value;
+							const steeringCoefficient = parseFloat(formEle.querySelector(".steering_coefficient").value);
+
+							const postDict = {
+								'steering_coefficient': steeringCoefficient,
+								'do_clamp': formEle.querySelector(".do_clamp").checked,
+								'all_tokens': formEle.querySelector(".all_tokens").checked,
+							};
+							if(name != ""){
+								postDict.name = name;
+							}
+							if(description != ""){
+								postDict.description = description;
+							}
+							
+							const promptIdx = window.curPromptInfo.data['id'];
+							await fetchJson("/prompts/" + promptIdx +"/comp_paths/default/nodes/" + window.curCompPathNodeIdx.data + "/add_steering_vector", "POST", postDict);
+							clearForm($("#add_steering_vector_form"));
+							await getCurPromptInfo();
+							window.curTokenIdx.broadcast();
+						}
+					</script>
+				</details></div>
 			</div>
 		</div>
 		<div id="comp_path_placeholder" style="display: none">
@@ -1659,6 +1799,7 @@
 			Loading computational path....
 		</div>
 	</div>
-	</div> <!-- this div is the "main_dashboard_elements" div -->
+
+	</div> <!-- this last div is the "main_dashboard_elements" div -->
 </body>
 </html>
