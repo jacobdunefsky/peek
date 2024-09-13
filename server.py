@@ -255,7 +255,6 @@ def replace_comp_path_with_component(prompt_idx, path_idx):
 
 	return sess.get_child_attrib_for_comp_path(prompt_idx, request.json, path_idx=path_idx, top_k_children=top_k_children, extend=False)
 
-
 @app.post('/prompts/<int:prompt_idx>/comp_paths')
 def save_cur_comp_path(prompt_idx):
 	name = request.json.get('name', None)
@@ -339,6 +338,27 @@ def top_deembeddings_from_feature_list(feature_list_idx, feature_idx):
 	sae_idx = int(request.args['sae_idx'])
 	k = int(request.args['k'])
 	return sess.top_deembeddings_from_feature_list(feature_list_idx, feature_idx, sae_idx, feature_pos=feature_pos, k=k)
+
+# steering vector stuff now
+
+@app.get("/prompts/<int:prompt_idx>/steering_vectors")
+def list_steering_vectors_for_prompt(prompt_idx):
+	return sess.list_steering_vectors_for_prompt(prompt_idx)
+
+@app.post('/prompts/<int:prompt_idx>/comp_paths/default/nodes/<int:feature_pos>/add_steering_vector')
+@app.post('/prompts/<int:prompt_idx>/add_steering_vector_from_cur_comp_path', defaults={'feature_pos': -1})
+def add_steering_vector(prompt_idx, feature_pos):
+	name = request.json.get('name', None)
+	description = request.json.get('description', None)
+	steering_coefficient = float(request.json.get('steering_coefficient', 1.0))
+	do_clamp = bool(request.json.get('do_clamp', True))
+
+	new_id = sess.add_steering_vector_from_comp_path_to_prompt(prompt_idx, comp_path_idx=None, feature_pos=feature_pos, do_clamp=do_clamp, steering_coefficient=steering_coefficient, name=name, description=description)
+	return {'steering_vector_id': new_id}
+
+@app.delete('/prompts/<int:prompt_idx>/steering_vectors/<int:steering_vector_idx>')
+def remove_steering_vector(prompt_idx, steering_vector_idx):
+	sess.remove_steering_vector(prompt_idx, steering_vector_idx)
 
 import traceback
 @app.post('/session/load')

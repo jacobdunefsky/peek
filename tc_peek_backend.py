@@ -522,8 +522,12 @@ class AttribInfo:
 	name : Optional[str] = None
 	description : Optional[str] = None
 
-	def serialize(self):
-		retdict = {
+	# for use with steering vectors
+	# is_unsteered_attrib : bool = False
+	unsteered_attrib : Optional['AttribInfo'] = None
+
+	def serialize_base(self):
+		return	{
 			'token_pos': self.token_pos,
 
 			'invar_factor': self.invar_factor,
@@ -537,8 +541,12 @@ class AttribInfo:
 			'total_invar_factor': self.total_invar_factor,
 			'total_ln_constant': self.total_ln_constant,
 			'total_attn_factor': self.total_attn_factor,
-			'total_attrib': self.total_attrib,
+			'total_attrib': self.total_attrib 
+		}
 
+	def serialize(self):
+		retdict = self.serialize_base()
+		retdict = {**retdict, 
 			'top_child_components': [x.serialize() for x in self.top_child_components] if self.top_child_components is not None else None,
 			'top_child_contribs': self.top_child_contribs,
 
@@ -719,10 +727,9 @@ class ComputationalPath:
 			new_node_info = AttribInfo.load(os.path.join(dirname, node_json_filename), load_tensors=load_tensors, in_zipfile=in_zipfile)
 			new_info.nodes.append(new_node_info)
 		return new_info
-
-	def get_total_attribs(self):
-		if len(self.nodes) == 0: return []
-		root = self.nodes[0]
+	
+	def _get_total_attribs_for_node_list(self, node_list):
+		root = node_list[0]
 		if root.total_attrib is None:
 			retlist = [AttribInfo(
 				feature_info = root.feature_info,
@@ -749,10 +756,8 @@ class ComputationalPath:
 		retlist[0].parent_ln_constant = 1.0
 		retlist[0].total_parent_ln_constant = 1.0
 
-		print(f'Total parent ln constant: {retlist[0].total_parent_ln_constant}')
-
-		for i in range(1, len(self.nodes)):
-			cur_node = self.nodes[i]
+		for i in range(1, len(node_list)):
+			cur_node = node_list[i]
 			if cur_node.total_attrib is not None:
 				retlist.append(cur_node)
 				continue
@@ -772,8 +777,29 @@ class ComputationalPath:
 			if cur_node.name is None: cur_node.name = cur_node.feature_info.name
 
 			retlist.append(cur_node)
+		return retlist
 
+	def get_total_attribs(self):
+		if len(self.nodes) == 0: return []
+		retlist = self._get_total_attribs_for_node_list(self.nodes)
 		self.nodes = retlist
+
+		# now, do the same for each node's unsteered_attrib
+		# ASSUMPTION: either all unsteered_attribs are None or no unsteered_attribs are None
+		unsteered_attribs = []
+		unsteered_attrib_none = False
+		for node in self.nodes:
+			if node.unsteered_attrib is None:
+				unsteered_attrib_none = True
+				break
+			unsteered_attribs.append(node.unsteered_attrib)
+		
+		if not unsteered_attrib_none:
+			unsteered_attribs = self._get_total_attribs_for_node_list(unsteered_attribs)
+
+		for node, unsteered_attrib in zip(self.nodes, unsteered_attribs):
+			node.unsteered_attrib = unsteered_attrib
+
 		return retlist
 
 ### SAE-related classes/methods ###
@@ -1140,6 +1166,38 @@ class DataPath:
 			new_hf_path = os.path.join(os.path.dirname(self.hf_path), filename)
 			return DataPath(path_type=DataPathType.HUGGINGFACE, hf_repo_id=self.hf_repo_id, hf_path=new_hf_path)
 
+### SteeringVector class ###
+# Used for steering prompts
+
+@dataclass
+class SteeringVector:
+	feature_info : FeatureInfo
+	token_pos : int
+
+	coefficient : float = 1.0
+	do_clamp : bool = True
+
+	name : Optional[str] = None
+	description : Optional[str] = None
+
+	def make_hooks(self):
+		hooks = []
+		feature_activ = 0.0
+		def in_hook(hidden_state, hook_name):
+			if self.do_clamp:
+				nonlocal feature_activ
+				feature_activ = self.feature_info.get_activs(
+					hidden_state[0, self.token_pos] #TODO: allow for batching?
+				)
+		def out_hook(hidden_state, hook_name):
+			hidden_state[:, self.token_pos] += self.decoder_vector * (self.coefficient - feature_activ)
+			return hidden_state
+
+		return [
+			(self.feature_info.input_layer.to_hookpoint_str, in_hook),
+			(self.feature_info.output_layer.to_hookpoint_str, out_hook)
+		]
+
 ###
 
 # below, a useful class for "lists" (really dicts) that automatically assign ids when adding members
@@ -1183,6 +1241,14 @@ class Prompt:
 		self.cur_comp_path = ComputationalPath(name="Current path") # the current working/tmp computational path
 
 		self.cur_feature_list_idx = None # the current working feature list
+
+		self.steering_vectors = IdDict() # list of active steering vectors
+		# if steering was applied, then this dict contains the original model activations before steering
+		self.unsteered_cache = None
+		# same with logits
+		self.unsteered_logits = None
+
+
 	
 	def save(self, dirpath, json_filename="prompt.json", save_tensors=True, out_zipfile=None): 
 		if out_zipfile is None:
@@ -1260,8 +1326,38 @@ class Prompt:
 
 			self.tokens = new_tokens
 			self.logits = logits
+			self.unsteered_logits = None
 			self.cache = cache
+			self.unsteered_cache = None
 		return new_tokens
+	
+	@no_grad()
+	def run_with_steering_vectors(self, model : HookedTransformer):
+		with self.lock:
+			if len(self.steering_vectors.dict) == 0:
+				self.unsteered_logits = None
+				self.unsteered_cache = None
+			else:
+				hooks = []
+				for steering_vector in self.steering_vectors.dict.values():
+					hooks.extend(steering_vector.make_hooks())
+
+				with model.hooks(fwd_hooks=hooks):
+					logits, cache = model.run_with_cache(self.tokens, return_type='logits')
+
+				if self.unsteered_logits is None:
+					self.unsteered_logits = self.logits
+				self.logits = logits
+
+				if self.unsteered_cache is None:
+					self.unsteered_cache = self.cache
+				self.cache = cache
+
+			# update computational paths
+			for idx, comp_path in self.comp_paths.dict.items():
+				for node_idx, node in enumerate(comp_path.nodes):
+					prev_node = comp_path.nodes[node_idx-1] if node_idx > 0 else None
+					comp_path.nodes[node_idx] = self.populate_attrib_info(node, prev_node)
 
 	@no_grad()
 	def get_feature_activs(self, feature : FeatureInfo):
@@ -1279,7 +1375,7 @@ class Prompt:
 		return activs
 
 	@no_grad()
-	def get_feature_ln_constant_at_token(self, feature : FeatureInfo, token_pos : int):
+	def get_feature_ln_constant_at_token(self, feature : FeatureInfo, token_pos : int, use_unsteered : bool = False):
 		if feature.input_layer.sublayer == Sublayer.ATTN_IN:
 			pre_ln_layer = LayerSublayer(feature.input_layer.layer, Sublayer.RESID_PRE)
 		elif feature.input_layer.sublayer == Sublayer.MLP_IN:
@@ -1289,11 +1385,16 @@ class Prompt:
 		else:
 			return 1.0
 
+		if use_unsteered:
+			cache = self.unsteered_cache
+		else:
+			cache = self.cache
+
 		pre_ln_activ = feature.get_activs(
-			self.cache[pre_ln_layer.to_hookpoint_str()][0, token_pos],
+			cache[pre_ln_layer.to_hookpoint_str()][0, token_pos],
 			use_relu=False
 		).item() # should be a single token
-		post_ln_activ = feature.get_activs(self.cache[feature.input_layer.to_hookpoint_str()][0, token_pos], use_relu=False).item()
+		post_ln_activ = feature.get_activs(cache[feature.input_layer.to_hookpoint_str()][0, token_pos], use_relu=False).item()
 
 		if pre_ln_activ == 0: return 0
 		return post_ln_activ/pre_ln_activ
@@ -1302,7 +1403,8 @@ class Prompt:
 	def get_features_activs_on_token(self, features : List[FeatureInfo], token_pos : int):
 		retlist = []
 		for feature in features:
-			activ = feature.get_activs(self.cache[feature.input_layer.to_hookpoint_str()][0, token_pos]).item() # should be a single number
+			# NOTE: this has been factored into populate_attrib_info()
+			""" activ = feature.get_activs(self.cache[feature.input_layer.to_hookpoint_str()][0, token_pos]).item() # should be a single number
 			attrib = AttribInfo(
 				feature_info=feature,
 				token_pos=token_pos,
@@ -1312,7 +1414,11 @@ class Prompt:
 			attrib.total_ln_constant = attrib.ln_constant
 			attrib.total_attn_factor = 1.0
 			attrib.total_invar_factor = 1.0
-			attrib.total_attrib = activ
+			attrib.total_attrib = activ """
+			attrib = self.populate_attrib_info(AttribInfo(
+				feature_info=feature,
+				token_pos=token_pos
+			))
 			retlist.append(attrib)
 		return retlist
 
@@ -1492,6 +1598,71 @@ class Prompt:
 		top_contribs = [all_contribs_tensor[i.item()].item() for i in top_idxs]
 
 		return top_components, top_contribs
+	
+	def populate_attrib_info(self, new_attrib, old_attrib=None, use_unsteered=False):
+		if use_unsteered:
+			cache = self.unsteered_cache
+		else:
+			cache = self.cache
+		
+		# get attn factor (if applicable)
+		attn_head = new_attrib.feature_info.attn_head
+		if attn_head is not None and old_attrib is not None:
+			new_attrib.attn_factor = cache[
+				f'blocks.{child.attn_layer}.attn.hook_pattern'
+			][0, attn_head, old_attrib.token_pos, new_attrib.token_pos].item()
+
+		# get feature activ
+		new_attrib.feature_activ = new_attrib.feature_info.get_activs(
+			cache[
+				new_attrib.feature_info.input_layer.to_hookpoint_str()
+			][0, new_attrib.token_pos]
+		).item()
+
+		# get the invariant factor
+		if old_attrib is not None:
+			new_attrib.invar_factor = torch.dot(new_attrib.feature_info.decoder_vector, old_attrib.feature_info.encoder_vector).item()
+		else:
+			new_attrib.invar_factor = 1.0
+
+		# get the LN constant
+		new_attrib.ln_constant = self.get_feature_ln_constant_at_token(new_attrib.feature_info, new_attrib.token_pos, use_unsteered=use_unsteered)
+
+		# update total attribs if we have no parent old_attrib
+		if old_attrib is None:
+			new_attrib.total_ln_constant = new_attrib.ln_constant
+			new_attrib.total_attn_factor = 1.0
+			new_attrib.total_invar_factor = 1.0
+			new_attrib.total_new_attrib = new_attrib.feature_activ
+
+		# now, update new_attrib.unsteered_attrb
+		if not use_unsteered: # prevent infinite recursion on child object
+			if self.unsteered_cache is not None and new_attrib.unsteered_attrib is None:
+				# prompt has been steered, but new_attrib doesn't reflect this
+				new_attrib.unsteered_attrib = AttribInfo(
+					feature_info=new_attrib.feature_info,
+					token_pos=new_attrib.token_pos
+				)
+				self.populate_attrib_info(new_attrib, old_attrib, use_unsteered=True)
+			elif self.unsteered_cache is None and new_attrib.unsteered_attrib is not None:
+				# all steering vectors have been removed from the prompt, but new_attrib hasn't been updated to reflect this
+
+				# TODO: make sure that there are no bugs here
+				new_attrib.invar_factor = new_attrib.unsteered_attrib.invar_factor
+				new_attrib.ln_constant = new_attrib.unsteered_attrib.ln_constant
+				new_attrib.attn_factor = new_attrib.unsteered_attrib.attn_factor
+				new_attrib.feature_activ = new_attrib.unsteered_attrib.feature_activ
+
+				new_attrib.total_invar_factor = new_attrib.unsteered_attrib.total_invar_factor
+				new_attrib.total_ln_constant = new_attrib.unsteered_attrib.total_ln_constant
+				new_attrib.total_attn_factor = new_attrib.unsteered_attrib.total_attn_factor
+				new_attrib.total_attrib = new_attrib.unsteered_attrib.total_attrib
+
+				# TODO: how to deal with child components? and parent ln constant?
+
+				new_attrib.unsteered_attrib = None
+
+		return new_attrib
 
 	@no_grad()
 	def get_child_component_attrib_info(self, model : HookedTransformer, sae_dict : IdDict, attrib : AttribInfo, child : ComponentInfo):
@@ -1511,29 +1682,29 @@ class Prompt:
 			# make FeatureInfo
 			new_feature = FeatureInfo.init_from_attn_pullback(model, attrib.feature_info, child.attn_layer, child.attn_head)
 
-			new_attrib.attn_factor = self.cache[
+			# NOTE: this has been factored into populate_attrib_info()
+			"""new_attrib.attn_factor = self.cache[
 				f'blocks.{child.attn_layer}.attn.hook_pattern'
-			][0, child.attn_head, attrib.token_pos, child.token_pos].item()
+			][0, child.attn_head, attrib.token_pos, child.token_pos].item()"""
 		elif child.component_type == ComponentType.EMBED:
 			embedding_vec = model.W_E[child.embed_vocab_idx]
 			new_feature = FeatureInfo.init_from_vector(model, LayerSublayer(0, Sublayer.EMBED), embedding_vec, name=f'embed_{child.embed_vocab_idx}', contravariant=True)
 
-		# get the feature activation
 		new_attrib.feature_info = new_feature
-		new_attrib.feature_activ = new_attrib.feature_info.get_activs(
-			self.cache[
-				new_attrib.feature_info.input_layer.to_hookpoint_str()
-			][0, new_attrib.token_pos]
-		).item()
-		# get the invariant factor
-		if attrib is not None:
-			new_attrib.invar_factor = torch.dot(new_attrib.feature_info.decoder_vector, attrib.feature_info.encoder_vector).item()
-		else:
-			new_attrib.invar_factor = 1.0
-		# get the LN constant
-		new_attrib.ln_constant = self.get_feature_ln_constant_at_token(new_attrib.feature_info, new_attrib.token_pos)
+
+		# populate new_attrib with feature activ, invariant factor, LN constant
+		new_attrib = self.populate_attrib_info(new_attrib, attrib)
 
 		return new_attrib
+	
+	def add_steering_vector(self, steering_vector):
+		idx = self.steering_vectors.add(steering_vector)
+		self.run_with_steering_vectors()
+		return idx
+	
+	def remove_steering_vector(self, steering_vector_id):
+		self.steering_vectors.remove(steering_vector_id)
+		self.run_with_steering_vectors()
 
 @dataclass
 class ModelInfo:
@@ -2020,6 +2191,15 @@ class Session:
 				cur_dict['activation'] = feature.get_activs(
 					prompt.cache[feature.input_layer.to_hookpoint_str()][0, token_pos]
 				).item()
+				
+				# deal with steering
+				if prompt.unsteered_cache is not None:
+					cur_dict['unsteered_activation'] = feature.get_activs(
+						prompt.unsteered_cache[feature.input_layer.to_hookpoint_str()][0, token_pos]
+					).item()
+				else:
+					cur_dict['unsteered_activation'] = None
+
 				cur_dict['name'] = feature.name
 				cur_dict['id'] = idx
 
@@ -2100,20 +2280,11 @@ class Session:
 		all_attribs = comp_path.get_total_attribs()
 		for node in all_attribs:
 			nodedict = copy.copy(self._get_feature_info_dict(node.feature_info))
-			nodedict['token_pos'] = node.token_pos
-
-			nodedict['total_invar_factor'] = node.total_invar_factor
-			nodedict['total_ln_constant'] = node.total_ln_constant
-			nodedict['total_attn_factor'] = node.total_attn_factor
-			nodedict['total_attrib'] = node.total_attrib
-
-			nodedict['total_parent_ln_constant'] = node.total_parent_ln_constant
-			nodedict['parent_ln_constant'] = node.parent_ln_constant
-
-			nodedict['feature_activ'] = node.feature_activ
-			nodedict['invar_factor'] = node.invar_factor
-			nodedict['ln_constant'] = node.ln_constant
-			nodedict['attn_factor'] = node.attn_factor
+			nodedict = {**nodedict, **node.serialize_base()}
+			if nodedict.unsteered_attrib is not None:
+				nodedict['unsteered_attrib'] = nodedict.unsteered_attrib.serialize_base()
+			else:
+				nodedict['unsteered_attrib'] = None
 
 			nodedict['name'] = node.name if node.name is not None else node.feature_info.name
 			nodedict['description'] = node.description
@@ -2293,3 +2464,47 @@ class Session:
 	def top_deembeddings_from_feature_list(self, feature_list_idx, feature_idx, sae_idx, feature_pos=-1, k=7):
 		feature = self.all_feature_lists.dict[feature_list_idx].dict[feature_idx]
 		return self._top_k_deembeddings(feature, k=k)	
+	
+	# SteeringVector-related methods
+	
+	def add_steering_vector_from_comp_path_to_prompt(self, prompt_idx, path_idx, steering_coefficient, feature_pos=-1, do_clamp=True, name=None, description=None):
+		prompt = self.prompt_list.dict[prompt_idx]
+		if path_idx is None:
+			comp_path = prompt.cur_comp_path
+		else:
+			comp_path = prompt.comp_paths.dict[path_idx]
+
+		attrib = comp_path.nodes[feature_pos]
+		feature = attrib.feature_info
+
+		steering_vector = SteeringVector(
+			feature_info=feature,
+			token_pos=attrib.token_pos,
+			coefficient=steering_coefficient,
+			do_clamp=do_clamp
+			name=name if name is not None else feature.name,
+			description=description if description is not None else feature.description
+		)
+
+		return prompt.add_steering_vector(steering_vector)
+	
+	def remove_steering_vector(self, prompt_idx, steering_vector_idx):
+		self.prompt_list.dict[prompt_idx].steering_vectors.remove(steering_vector_idx)
+	
+	def list_steering_vectors_for_prompt(self, prompt_idx):
+		retlist = []
+		prompt = self.prompt_list.dict[prompt_idx]
+		with prompt.steering_vectors.lock:
+			for idx, steering_vector in prompt.steering_vectors.dict.items():
+				retdict = {
+					'name': steering_vector.name,
+					'description': steering_vector.description,
+
+					'feature_info': steering_vector.feature_info.serialize(),
+					'token_pos': steering_vector.token_pos,
+					'coefficient': steering_vector.coefficient,
+					'do_clamp': steering_vector.do_clamp
+				}
+				retlist.append(retdict)
+
+		return retlist
