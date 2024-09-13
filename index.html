@@ -126,6 +126,20 @@
 </script>
 </head>
 <body>
+	<!-- header -->
+	<div class="header" style="position: sticky; top: 0;">
+		<div style="flex: 1; display: flex; align-items: center; gap: inherit">
+			<p style="font-size: 30pt">Peek</a>
+		</div>
+		<div style="flex: 2; display: flex; align-items: center; justify-content: right; gap: inherit;">
+			<a class="clickable" href="#session_info_div">Session info</a>
+			<a class="clickable" href="#prompt_view">Current prompt</a>
+			<a class="clickable" href="#token_view">Current token</a>
+			<a class="clickable" href="#comp_path_view">Current path</a>
+		</div>
+	</div>
+	<!-- end header -->
+
 	{{ main_templates.session_info_div() }}
 
 	<div id="main_dashboard_placeholder" class="big_div">
