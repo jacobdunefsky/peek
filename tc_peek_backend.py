@@ -1640,7 +1640,15 @@ class Prompt:
 			new_attrib.total_ln_constant = new_attrib.ln_constant
 			new_attrib.total_attn_factor = 1.0
 			new_attrib.total_invar_factor = 1.0
-			new_attrib.total_new_attrib = new_attrib.feature_activ
+			new_attrib.total_attrib = new_attrib.feature_activ
+		else:
+			new_attrib.total_ln_constant = old_attrib.total_ln_constant * new_attrib.ln_constant
+			new_attrib.total_attn_factor = new_attrib.attn_factor * old_attrib.total_attn_factor
+			new_attrib.total_invar_factor = new_attrib.invar_factor * old_attrib.total_invar_factor
+			new_attrib.total_attrib = new_attrib.total_invar_factor * old_attrib.total_ln_constant * new_attrib.total_attn_factor * new_attrib.feature_activ
+
+			new_attrib.parent_ln_constant = old_attrib.ln_constant
+			new_attrib.total_parent_ln_constant = old_attrib.total_ln_constant
 
 		# now, update new_attrib.unsteered_attrb
 		if not use_unsteered: # prevent infinite recursion on child object
@@ -1672,7 +1680,7 @@ class Prompt:
 		return new_attrib
 
 	@no_grad()
-	def get_child_component_attrib_info(self, model : HookedTransformer, sae_dict : IdDict, attrib : AttribInfo, child : ComponentInfo):
+	def get_child_component_attrib_info(self, model : HookedTransformer, sae_dict : IdDict, attrib : AttribInfo, child : ComponentInfo, use_unsteered=False):
 		new_feature = FeatureInfo()
 		new_attrib = AttribInfo()
 		new_attrib.token_pos = child.token_pos
@@ -1700,7 +1708,7 @@ class Prompt:
 		new_attrib.feature_info = new_feature
 
 		# populate new_attrib with feature activ, invariant factor, LN constant
-		new_attrib = self.populate_attrib_info(new_attrib, attrib)
+		new_attrib = self.populate_attrib_info(new_attrib, attrib, use_unsteered=use_unsteered)
 
 		return new_attrib
 	
@@ -2316,12 +2324,20 @@ class Session:
 					childdict['embed_vocab_idx'] = component.embed_vocab_idx
 
 					childdict['contrib'] = contrib
-
+					# deal with steering: also want to get child components' unsteered attribs
+					if prompt.unsteered_cache is not None:
+						# TODO: is this way too inefficient?
+						unsteered_contrib = prompt.get_child_component_attrib_info(self.model, self.sae_list, node, component, use_unsteered=True).total_attrib
+						childdict['unsteered_contrib'] = unsteered_contrib
+						print(unsteered_contrib)
+					else:
+						childdict['unsteered_contrib'] = None
+						
 					nodedict['top_children'].append(childdict)
 
 			retdict['nodes'].append(nodedict)
 
-		retdict['top_children'] = []
+		"""retdict['top_children'] = []
 		if not comp_path.is_outdated and all_attribs[feature_pos].feature_info.encoder_vector is not None:
 			top_components, top_contribs = prompt.get_top_contribs(self.model, self.sae_list, all_attribs[feature_pos], k=top_k_children)
 			for component, contrib in zip(top_components, top_contribs):
@@ -2337,7 +2353,8 @@ class Session:
 
 				childdict['contrib'] = contrib
 
-				retdict['top_children'].append(childdict)
+				retdict['top_children'].append(childdict)"""
+		retdict['top_children'] = retdict['nodes'][feature_pos]['top_children']
 
 		# set prompt's current computational path to the new one
 		prompt.cur_comp_path = copy.copy(comp_path)

@@ -1492,9 +1492,24 @@
 								childStr = childStr + 'embed[' + curChild['embed_vocab_idx'] + ']';
 							}
 					
-							childStr = childStr + '@' + curChild['token_pos'] + ': ' + curChild['contrib'];
+							childStr = childStr + '@' + curChild['token_pos'] + ': ' + curChild['contrib'].toPrecision(4);
 
 							newNode.innerText = childStr;
+							
+							// display steering info if relevant
+							if(curChild['unsteered_contrib'] != null){
+								const steerInfoNodeTemplate = document.createElement('span');
+								steerInfoNodeTemplate.style.color = 'blue';
+								steerInfoNodeTemplate.innerHTML = ' (<span class="steer_activ_diff"></span> from steering)';
+								const steerAttribNodeTemplate = steerInfoNodeTemplate.querySelector(".steer_activ_diff");
+
+								const unsteeredAttrib = curChild['unsteered_contrib'];
+
+								steerAttribNodeTemplate.innerText = '+' + (curChild['contrib']-curChild['unsteered_contrib']).toPrecision(4);
+
+								newNode.innerHTML += steerInfoNodeTemplate.outerHTML;
+							}
+								
 							// click on each child to extend the current computational path
 							(function(){
 								const promptIdx = window.curPromptInfo.data['id'];
