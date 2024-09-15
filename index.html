@@ -131,7 +131,7 @@
 		<div style="flex: 1; display: flex; align-items: center; gap: inherit">
 			<p style="font-size: 30pt">Peek</a>
 		</div>
-		<div style="flex: 2; display: flex; align-items: center; justify-content: right; gap: inherit;">
+		<div id="header_right_column" style="flex: 2; align-items: center; justify-content: right; gap: inherit; display: none">
 			<a class="clickable" href="#session_info_div">Session info</a>
 			<a class="clickable" href="#prompt_view">Current prompt</a>
 			<a class="clickable" href="#token_view">Current token</a>
@@ -151,6 +151,7 @@
 			if(modelInfo != null){
 				$("#main_dashboard_placeholder").style.display = 'none';
 				$("#main_dashboard_elements").style.display = 'block';
+				$("#header_right_column").style.display = 'flex';
 			}
 		});
 	</script>
@@ -1238,7 +1239,18 @@
 					newNode.removeAttribute("id");
 
 					newNode.querySelector(".feature_name").innerText = activ['name'];
-					newNode.querySelector(".feature_activ").innerText = activ['activation'];
+					newNode.querySelector(".feature_activ").innerText = activ['activation'].toPrecision(4);
+					if(activ['unsteered_activation'] != null){
+						const steerInfoNodeTemplate = document.createElement('span');
+						steerInfoNodeTemplate.style.color = 'blue';
+						steerInfoNodeTemplate.innerHTML = ' (<span class="steer_activ_diff"></span> from steering)';
+						const steerAttribNodeTemplate = steerInfoNodeTemplate.querySelector(".steer_activ_diff");
+
+						const unsteeredAttrib = activ['unsteered_activation'];
+
+						steerAttribNodeTemplate.innerText = '+' + (activ['activation']-activ['unsteered_activation']).toPrecision(4);
+						newNode.querySelector(".feature_activ").innerHTML += steerInfoNodeTemplate.outerHTML;
+					}
 					newNode.querySelector(".id").value = activ['id'];
 
 					// capture current tokenIdx, activation
@@ -1430,6 +1442,21 @@
 					attribEle.querySelector(".invar_factor").innerText =  curNode['invar_factor'].toPrecision(4);
 					attribEle.querySelector(".parent_ln_constant").innerText = curNode['parent_ln_constant'].toPrecision(4);
 					attribEle.querySelector(".attn_factor").innerText = curNode['attn_factor'].toPrecision(4);
+
+					// here, we include information related to steering
+					// (in particular, how much of the current attribution is due to steering)
+					if(curNode['unsteered_attrib'] != null){
+						const steerInfoNodeTemplate = document.createElement('span');
+						steerInfoNodeTemplate.style.color = 'blue';
+						steerInfoNodeTemplate.innerHTML = ' (<span class="steer_attrib_diff"></span> from steering)';
+						const steerAttribNodeTemplate = steerInfoNodeTemplate.querySelector(".steer_attrib_diff");
+
+						const unsteeredAttrib = curNode['unsteered_attrib'];
+
+						steerAttribNodeTemplate.innerText = '+' + (curNode['total_attrib']-unsteeredAttrib['total_attrib']).toPrecision(4);
+						attribEle.querySelector(".total_attrib").innerHTML += steerInfoNodeTemplate.outerHTML;
+
+					}
 
 					// now, list the most important child components for our node
 

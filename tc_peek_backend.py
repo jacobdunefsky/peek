@@ -782,6 +782,8 @@ class ComputationalPath:
 	def get_total_attribs(self):
 		if len(self.nodes) == 0: return []
 		retlist = self._get_total_attribs_for_node_list(self.nodes)
+		for original_node, new_node in zip(self.nodes, retlist):
+			new_node.unsteered_attrib = original_node.unsteered_attrib
 		self.nodes = retlist
 
 		# now, do the same for each node's unsteered_attrib
@@ -797,8 +799,8 @@ class ComputationalPath:
 		if not unsteered_attrib_none:
 			unsteered_attribs = self._get_total_attribs_for_node_list(unsteered_attribs)
 
-		for node, unsteered_attrib in zip(self.nodes, unsteered_attribs):
-			node.unsteered_attrib = unsteered_attrib
+			for node, unsteered_attrib in zip(self.nodes, unsteered_attribs):
+				node.unsteered_attrib = unsteered_attrib
 
 		return retlist
 
@@ -1198,7 +1200,6 @@ class SteeringVector:
 			if self.token_pos is not None:
 				hidden_state[:, self.token_pos] += self.feature_info.decoder_vector * (self.coefficient - feature_activ)
 			else:
-				print(f'out hook feature_activ: {feature_activ}')
 				if self.do_clamp:
 					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.decoder_vector, self.coefficient - feature_activ)
 				else:
@@ -1345,16 +1346,13 @@ class Prompt:
 	
 	@no_grad()
 	def run_with_steering_vectors(self, model : HookedTransformer):
-		print(f'How many steering vectors: {len(self.steering_vectors.dict)}')
 		with self.lock:
 			if len(self.steering_vectors.dict) == 0:
 				self.cache = self.unsteered_cache
 				self.logits = self.unsteered_logits
 				self.unsteered_logits = None
 				self.unsteered_cache = None
-				print("No more steering vectors.")
 			else:
-				print(len(self.steering_vectors.dict))
 				hooks = []
 				for steering_vector in self.steering_vectors.dict.values():
 					hooks.extend(steering_vector.make_hooks())
@@ -1375,6 +1373,9 @@ class Prompt:
 				for node_idx, node in enumerate(comp_path.nodes):
 					prev_node = comp_path.nodes[node_idx-1] if node_idx > 0 else None
 					comp_path.nodes[node_idx] = self.populate_attrib_info(node, prev_node)
+			for node_idx, node in enumerate(self.cur_comp_path.nodes):
+				prev_node = self.cur_comp_path.nodes[node_idx-1] if node_idx > 0 else None
+				self.cur_comp_path.nodes[node_idx] = self.populate_attrib_info(node, prev_node)
 
 	@no_grad()
 	def get_feature_activs(self, feature : FeatureInfo):
@@ -1420,22 +1421,11 @@ class Prompt:
 	def get_features_activs_on_token(self, features : List[FeatureInfo], token_pos : int):
 		retlist = []
 		for feature in features:
-			# NOTE: this has been factored into populate_attrib_info()
-			""" activ = feature.get_activs(self.cache[feature.input_layer.to_hookpoint_str()][0, token_pos]).item() # should be a single number
-			attrib = AttribInfo(
-				feature_info=feature,
-				token_pos=token_pos,
-				feature_activ=activ,
-				ln_constant=self.get_feature_ln_constant_at_token(feature, token_pos),
-			)
-			attrib.total_ln_constant = attrib.ln_constant
-			attrib.total_attn_factor = 1.0
-			attrib.total_invar_factor = 1.0
-			attrib.total_attrib = activ """
 			attrib = self.populate_attrib_info(AttribInfo(
 				feature_info=feature,
 				token_pos=token_pos
 			))
+			
 			retlist.append(attrib)
 		return retlist
 
@@ -2005,7 +1995,6 @@ class Session:
 			for idx, sae_info in sorted(self.sae_list.dict.items(), key=lambda x: x[1].input_layer):
 				retval = {**sae_info.serialize(), **sae_info.sae.cfg.serialize()}
 				retval['id'] = idx
-				print(retval)
 
 				retlist.append(retval)
 		return retlist
