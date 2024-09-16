@@ -1253,8 +1253,11 @@
 						const steerAttribNodeTemplate = steerInfoNodeTemplate.querySelector(".steer_activ_diff");
 
 						const unsteeredAttrib = activ['unsteered_activation'];
-
-						steerAttribNodeTemplate.innerText = '+' + (activ['activation']-activ['unsteered_activation']).toPrecision(4);
+						const attribDiff = activ['activation']-activ['unsteered_activation'];
+						if(attribDiff >= 0){
+							steerAttribNodeTemplate.innerText = '+'
+						}
+						steerAttribNodeTemplate.innerText += attribDiff.toPrecision(4);
 						newNode.querySelector(".feature_activ").innerHTML += steerInfoNodeTemplate.outerHTML;
 					}
 					newNode.querySelector(".id").value = activ['id'];
@@ -1459,7 +1462,12 @@
 
 						const unsteeredAttrib = curNode['unsteered_attrib'];
 
-						steerAttribNodeTemplate.innerText = '+' + (curNode['total_attrib']-unsteeredAttrib['total_attrib']).toPrecision(4);
+						const attribDiff = curNode['total_attrib']-unsteeredAttrib['total_attrib'];
+						if(attribDiff >= 0){
+							steerAttribNodeTemplate.innerText = '+'
+						}
+						steerAttribNodeTemplate.innerText += attribDiff.toPrecision(4);
+						
 						attribEle.querySelector(".total_attrib").innerHTML += steerInfoNodeTemplate.outerHTML;
 
 					}
@@ -1511,7 +1519,11 @@
 
 								const unsteeredAttrib = curChild['unsteered_contrib'];
 
-								steerAttribNodeTemplate.innerText = '+' + (curChild['contrib']-curChild['unsteered_contrib']).toPrecision(4);
+								const attribDiff = curChild['contrib']-unsteeredAttrib;
+								if(attribDiff >= 0){
+									steerAttribNodeTemplate.innerText = '+'
+								}
+								steerAttribNodeTemplate.innerText += attribDiff.toPrecision(4);
 
 								newNode.innerHTML += steerInfoNodeTemplate.outerHTML;
 							}

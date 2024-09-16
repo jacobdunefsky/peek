@@ -1679,7 +1679,7 @@ class Prompt:
 
 	@no_grad()
 	def get_top_contribs(self, model : HookedTransformer, sae_dict : IdDict, attrib : AttribInfo, k=7):
-		print(f"Getting top contribs for node at layer {attrib.feature_info.input_layer}")
+		# print(f"Getting top contribs for node at layer {attrib.feature_info.input_layer}")
 		attn_components, attn_contribs = self.get_top_attn_contribs(model, attrib, k=k)
 		sae_components, sae_contribs = self.get_top_sae_contribs(model, sae_dict, attrib, k=k)
 
@@ -2404,9 +2404,8 @@ class Session:
 			# get top-contributing child components
 			if not comp_path.is_outdated:
 				if node.top_child_components is None:
-					print(f"About to get top contribs for node at layer {node.feature_info.input_layer}")
+					# print(f"About to get top contribs for node at layer {node.feature_info.input_layer}")
 					top_components, top_contribs = prompt.get_top_contribs(self.model, self.sae_list, node, k=top_k_children)
-					print(top_components[0])
 					node.top_child_components = top_components
 					node.top_child_contribs = top_contribs
 				nodedict['top_children'] = []
@@ -2427,7 +2426,6 @@ class Session:
 						# TODO: is this way too inefficient?
 						unsteered_contrib = prompt.get_child_component_attrib_info(self.model, self.sae_list, node, component, use_unsteered=True).total_attrib
 						childdict['unsteered_contrib'] = unsteered_contrib
-						print(unsteered_contrib)
 					else:
 						childdict['unsteered_contrib'] = None
 						
@@ -2510,7 +2508,7 @@ class Session:
 		prompt.cur_comp_path.name = ""
 		prompt.cur_comp_path.description = ""
 
-		print(prompt.cur_comp_path.is_outdated)
+		# print(prompt.cur_comp_path.is_outdated)
 
 		# now return information for the updated current computational path
 
