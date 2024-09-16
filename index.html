@@ -968,7 +968,13 @@
 
 							populateFeatureInfo(new_node, cur_info['feature_info']);
 							new_node.querySelector('.coefficient').innerText = cur_info['coefficient'];
-							new_node.querySelector('.token_pos').innerText = cur_info['token_pos'];
+							const token_pos = cur_info['token_pos'];
+							if(token_pos != null){
+								new_node.querySelector('.token_pos').innerText = token_pos;
+							}
+							else {
+								new_node.querySelector('.token_pos').innerText = "All tokens"
+							}
 							new_node.querySelector('.do_clamp').innerText = cur_info['do_clamp'];
 
 							new_node.style.display = 'block';

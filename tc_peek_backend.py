@@ -1174,7 +1174,7 @@ class DataPath:
 @dataclass
 class SteeringVector:
 	feature_info : FeatureInfo
-	token_pos : int
+	token_pos : Optional[int]
 
 	coefficient : float = 1.0
 	do_clamp : bool = True
@@ -1322,36 +1322,55 @@ class Prompt:
 
 	@no_grad()
 	def run_model_on_text(self, model : HookedTransformer, text : str):
+		# here's how invalidation works:
+		# 1. See if any steering vectors are invalidated. A steering vector is invalidated if it applies to a token that will be different in the new prompt (or comes after a token that will be different in the new prompt).
+		# 2. If any steering vectors are invalidated, then remove the invalidated ones and rerun the whole prompt with the remaining steering vectors.
+		# 3. Then, see if any computational paths are invalidated. A computational path is invalidated when it involves a token that is different in the new prompt (or comes after a token that will be different in the new prompt.)
+
+		new_tokens = model.to_str_tokens(text)
+		# idempotency
+		if self.tokens == new_tokens and self.cache is not None: return self.tokens
+
 		with self.lock:
-			new_tokens = model.to_str_tokens(text)
+			# get index of first different token
+			minlen = min(len(self.tokens), len(new_tokens))
+			diff_idx = None
+			for i in range(minlen):
+				if self.tokens[i] != new_tokens[i]:
+					diff_idx = i
+					break
+			if diff_idx is None: diff_idx = minlen
 
-			# invalidate all current computational paths
-			# we invalidate all computational paths that include any tokens that have changed since the last time the prompt was run
-			if self.tokens != new_tokens:
-				# get index of first different token
-				minlen = min(len(self.tokens), len(new_tokens))
-				diff_idx = None
-				for i in range(minlen):
-					if self.tokens[i] != new_tokens[i]:
-						diff_idx = i
-						break
-				if diff_idx is None: diff_idx = minlen
+			# invalidate steering vectors
+			new_steering_vectors_dict = {idx: vector for idx, vector in self.steering_vectors.dict.items() if vector.token_pos is None or vector.token_pos < diff_idx}
+			are_steering_vectors_invalidated = len(new_steering_vectors_dict) != len(self.steering_vectors.dict)
+			self.steering_vectors.dict = new_steering_vectors_dict	
 
-				for path in self.comp_paths.dict.values():
-					if not path.is_outdated and path.nodes[0].token_pos < diff_idx:
-						path.is_outdated = True
-						path.outdated_token_strs = self.tokens
-				if not self.cur_comp_path.is_outdated and self.cur_comp_path.nodes[0].token_pos >= diff_idx:
-					self.cur_comp_path.is_outdated = True
-					self.cur_comp_path.outdated_token_strs = self.tokens
+			# invalidate computational paths
+			for path in self.comp_paths.dict.values():
+				if not path.is_outdated and path.nodes[0].token_pos >= diff_idx:
+					path.is_outdated = True
+					path.outdated_token_strs = self.tokens
+			if not self.cur_comp_path.is_outdated and self.cur_comp_path.nodes[0].token_pos >= diff_idx:
+				self.cur_comp_path.is_outdated = True
+				self.cur_comp_path.outdated_token_strs = self.tokens
 
+			# run the model
 			logits, cache = model.run_with_cache(text, return_type='logits')
-
 			self.tokens = new_tokens
-			self.logits = logits
-			self.unsteered_logits = None
-			self.cache = cache
-			self.unsteered_cache = None
+
+			# cache management for steering vectors
+			if len(self.steering_vectors.dict) == 0:
+				self.logits = logits
+				self.unsteered_logits = None
+				self.cache = cache
+				self.unsteered_cache = None
+			else:
+				self.unsteered_logits = logits
+				self.unsteered_cache = cache
+
+				self.run_with_steering_vectors(model)
+	
 		return new_tokens
 	
 	@no_grad()
@@ -1729,7 +1748,8 @@ class Prompt:
 	
 	def remove_steering_vector(self, model, steering_vector_id):
 		self.steering_vectors.remove(steering_vector_id)
-		self.run_with_steering_vectors(model)
+		if model is not None:
+			self.run_with_steering_vectors(model)
 
 @dataclass
 class ModelInfo:
