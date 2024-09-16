@@ -1182,6 +1182,66 @@ class SteeringVector:
 	name : Optional[str] = None
 	description : Optional[str] = None
 
+	def serialize(self):
+		return {
+			'name': self.name,
+			'description': self.description,
+
+			'token_pos': self.token_pos,
+			'coefficient': self.coefficient,
+			'do_clamp': self.do_clamp,
+
+			'feature_info': self.feature_info.serialize()
+		}
+	
+	def save(self, dirpath, json_filename="steering_vector.json", save_tensors=True, out_zipfile=None):
+		if out_zipfile is None:
+			if not os.path.exists(dirpath):
+				os.mkdir(dirpath)
+
+		retdict = self.serialize()
+
+		# save feature info
+		retdict['feature_json_filename'] = self.feature_info.save(dirpath, save_tensors=save_tensors, out_zipfile=out_zipfile)
+
+		if out_zipfile is None:
+			with open(os.path.join(dirpath, json_filename), "w") as ofp:
+				json.dump(retdict, ofp)
+		else:
+			with out_zipfile.open(os.path.join(dirpath, json_filename), "w") as ofp:
+				s = json.dumps(retdict)
+				ofp.write(bytes(s, 'ascii'))
+
+		return json_filename
+	
+	@classmethod
+	def deserialize(cls, d):
+		return cls(
+			feature_info=FeatureInfo.deserialize(d['feature_info']),
+			token_pos=d['token_pos'],
+
+			coefficient=d['coefficient'],
+			do_clamp=d['do_clamp'],
+
+			name=d['name'] if 'name' in d else None,
+			description=d['description'] if 'description' in d else None
+		)
+	
+	@classmethod
+	def load(cls, json_path, load_tensors=True, in_zipfile=None):
+		if in_zipfile is None:
+			with open(json_path, "r") as fp:
+				d = json.load(fp)
+		else:
+			with in_zipfile.open(json_path, "r") as fp:
+				d = json.load(fp)
+		new_info = cls.deserialize(d)
+
+		feature_info_filename = d['feature_json_filename']
+		dirname = os.path.dirname(json_path)
+		new_info.feature_info = FeatureInfo.load(os.path.join(dirname, feature_info_filename), load_tensors=load_tensors, in_zipfile=in_zipfile)
+		return new_info
+
 	def make_hooks(self):
 		hooks = []
 		feature_activ = 0.0
@@ -1262,20 +1322,17 @@ class Prompt:
 		self.unsteered_logits = None
 
 
-	
 	def save(self, dirpath, json_filename="prompt.json", save_tensors=True, out_zipfile=None): 
 		if out_zipfile is None:
 			if not os.path.exists(dirpath):
 				os.mkdir(dirpath)
-		"""else:
-			if not zipfile.Path(out_zipfile, dirpath).exists():
-				out_zipfile.mkdir(dirpath)"""
 
 		retdict = {
 			'name': self.name,
 			'description': self.description,
 			'tokens': self.tokens,
 			'comp_path_json_filenames': {},
+			'steering_vector_json_filenames': {},
 			'cur_feature_list_idx': self.cur_feature_list_idx,
 		}
 
@@ -1288,6 +1345,12 @@ class Prompt:
 				comp_path_dirname = f'comp_path_{idx}'
 				comp_path_json_filename = comp_path.save(os.path.join(dirpath, comp_path_dirname), save_tensors=save_tensors, out_zipfile=out_zipfile)
 				retdict['comp_path_json_filenames'][idx] = os.path.join(comp_path_dirname, comp_path_json_filename)
+
+		with self.steering_vectors.lock:
+			for idx, steering_vector in self.steering_vectors.dict.items():
+				steering_vector_dirname = f'steering_vector_{idx}'
+				steering_vector_json_filename = steering_vector.save(os.path.join(dirpath, steering_vector_dirname), save_tensors=save_tensors, out_zipfile=out_zipfile)
+				retdict['steering_vector_json_filenames'][idx] = os.path.join(steering_vector_dirname, steering_vector_json_filename)
 
 		if out_zipfile is None:
 			with open(os.path.join(dirpath, json_filename), "w") as ofp:
@@ -1317,6 +1380,11 @@ class Prompt:
 			comp_path = ComputationalPath.load(os.path.join(dirname, comp_path_json_filename), load_tensors=load_tensors, in_zipfile=in_zipfile)
 			new_info.comp_paths.add(comp_path)
 		new_info.cur_comp_path = ComputationalPath.load(os.path.join(dirname, d['cur_comp_path_json_filename']), load_tensors=load_tensors, in_zipfile=in_zipfile)
+
+		if 'steering_vector_json_filenames' in d:
+			for idx, steering_vector_json_filename in d['steering_vector_json_filenames'].items():
+				steering_vector = SteeringVector.load(os.path.join(dirname, steering_vector_json_filename), load_tensors=load_tensors, in_zipfile=in_zipfile)
+				new_info.steering_vectors.add(steering_vector)
 
 		return new_info
 
