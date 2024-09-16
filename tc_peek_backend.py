@@ -1326,12 +1326,22 @@ class Prompt:
 			new_tokens = model.to_str_tokens(text)
 
 			# invalidate all current computational paths
+			# we invalidate all computational paths that include any tokens that have changed since the last time the prompt was run
 			if self.tokens != new_tokens:
+				# get index of first different token
+				minlen = min(len(self.tokens), len(new_tokens))
+				diff_idx = None
+				for i in range(minlen):
+					if self.tokens[i] != new_tokens[i]:
+						diff_idx = i
+						break
+				if diff_idx is None: diff_idx = minlen
+
 				for path in self.comp_paths.dict.values():
-					if not path.is_outdated:
+					if not path.is_outdated and path.nodes[0].token_pos < diff_idx:
 						path.is_outdated = True
 						path.outdated_token_strs = self.tokens
-				if not self.cur_comp_path.is_outdated:
+				if not self.cur_comp_path.is_outdated and self.cur_comp_path.nodes[0].token_pos >= diff_idx:
 					self.cur_comp_path.is_outdated = True
 					self.cur_comp_path.outdated_token_strs = self.tokens
 
@@ -2354,7 +2364,10 @@ class Session:
 				childdict['contrib'] = contrib
 
 				retdict['top_children'].append(childdict)"""
-		retdict['top_children'] = retdict['nodes'][feature_pos]['top_children']
+		if not comp_path.is_outdated:
+			retdict['top_children'] = retdict['nodes'][feature_pos]['top_children']
+		else:
+			retdict['top_children'] = []
 
 		# set prompt's current computational path to the new one
 		prompt.cur_comp_path = copy.copy(comp_path)
