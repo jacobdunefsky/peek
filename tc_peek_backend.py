@@ -1419,7 +1419,7 @@ class Prompt:
 				if not path.is_outdated and path.nodes[0].token_pos >= diff_idx:
 					path.is_outdated = True
 					path.outdated_token_strs = self.tokens
-			if not self.cur_comp_path.is_outdated and self.cur_comp_path.nodes[0].token_pos >= diff_idx:
+			if not self.cur_comp_path.is_outdated and len(self.cur_comp_path.nodes) > 0 and self.cur_comp_path.nodes[0].token_pos >= diff_idx:
 				self.cur_comp_path.is_outdated = True
 				self.cur_comp_path.outdated_token_strs = self.tokens
 
