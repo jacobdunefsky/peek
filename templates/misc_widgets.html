@@ -2,7 +2,12 @@
 	<div id="comp_path_attr" class="small_div">
 		<details>
 			<summary>
-				<b>Total attribution:</b> <span class="total_attrib">{{'' if node is none else node.total_attrib}}</span>
+				{% set steer_activ_diff_html='' %}
+				{% if node is not none and node.unsteered_attrib is defined  and node.unsteered_attrib is not none %}{% set steer_activ_diff_html %}
+					{% set steer_activ_diff=node.total_attrib - node.unsteered_attrib.total_attrib %}
+					<span style="color: blue">({% if steer_activ_diff >= 0 %}+{% endif %}{{steer_activ_diff}} from steering)</span>
+				{% endset %}{% endif %}
+				<b>Total attribution:</b> <span class="total_attrib">{{'' if node is none else node.total_attrib}} {{ steer_activ_diff_html }}</span>
 			</summary>
 			<p><b>Input-invariant factor:</b> &times;<span class="total_invar_factor">{{'' if node is none else node.total_invar_factor}}</span> (&times;<span class="invar_factor">{{'' if node is none else node.invar_factor}}</span> for this node)</p>
 			<p><b>LayerNorm scaling factor:</b> &times;<span class="total_parent_ln_constant">{{'' if node is none else node.total_parent_ln_constant}}</span> (&times;<span class="parent_ln_constant">{{'' if node is none else node.parent_ln_constant}}</span> from parent)</p>

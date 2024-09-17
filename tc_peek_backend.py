@@ -541,7 +541,10 @@ class AttribInfo:
 			'total_invar_factor': self.total_invar_factor,
 			'total_ln_constant': self.total_ln_constant,
 			'total_attn_factor': self.total_attn_factor,
-			'total_attrib': self.total_attrib 
+			'total_attrib': self.total_attrib,
+
+			'unsteered_attrib': None if self.unsteered_attrib is None else self.unsteered_attrib.serialize()
+
 		}
 
 	def serialize(self):
@@ -603,6 +606,8 @@ class AttribInfo:
 
 			name=d['name'] if 'name' in d else None,
 			description=d['description'] if 'description' in d else None,
+
+			unsteered_attrib=cls.deserialize(d['unsteered_attrib']) if 'unsteered_attrib' in d and d['unsteered_attrib'] is not None else None,
 		)
 		return new_info
 	
