@@ -155,19 +155,31 @@
 			</div>
 		</div>
 	</div>
-	<div class="list_div" style="border-width: 1px; border-style: solid">
-		{% if prompt.comp_paths.dict|length != 0 %}
-			<p>Computational paths: </p>
-			{% for path_idx, path_info in prompt.comp_paths.dict.items() %}
-				{% set view_button %}
-					<button onclick="viewCompPath({{prompt_idx}}, {{path_idx}}, 0)">View</button>
-				{% endset %}
-				{% set onclick %}(function(x){viewCompPath({{prompt_idx}}, {{path_idx}}, x)}){% endset %}
-				{{ list_items.comp_paths_list_item(path_info, static_right_header_col=view_button, onclick=onclick) }}
-			{% endfor %}
-		{% else %}
-			<p>No computational paths have been pinned to this prompt.</p>
-		{% endif %}
+	<div style="display: flex; flex-direction: row">
+		<div class="list_div" style="flex: 1; border-width: 1px; border-style: solid">
+			{% if prompt.comp_paths.dict|length != 0 %}
+				<p>Computational paths: </p>
+				{% for path_idx, path_info in prompt.comp_paths.dict.items() %}
+					{% set view_button %}
+						<button onclick="viewCompPath({{prompt_idx}}, {{path_idx}}, 0)">View</button>
+					{% endset %}
+					{% set onclick %}(function(x){viewCompPath({{prompt_idx}}, {{path_idx}}, x)}){% endset %}
+					{{ list_items.comp_paths_list_item(path_info, static_right_header_col=view_button, onclick=onclick) }}
+				{% endfor %}
+			{% else %}
+				<p>No computational paths have been pinned to this prompt.</p>
+			{% endif %}
+		</div>
+		<div class="list_div" style="flex: 1; border-width: 1px; border-style: solid">
+			{% if prompt.steering_vectors is defined and prompt.steering_vectors.dict|length != 0 %}
+				<p>Steering vectors active on this prompt: </p>
+				{% for idx, steering_vector in prompt.steering_vectors.dict.items() %}
+					{{ list_items.steering_vectors_list_item(steering_vector) }}
+				{% endfor %}
+			{% else %}
+				<p>No steering vectors are active on this prompt.</p>
+			{% endif %}
+		</div>
 	</div>
 
 	<hr/>

@@ -243,8 +243,8 @@
 	{{ list_item(id, contents+dynamic_contents, class='feature_lists_list_item', style=style, left_header_col=left_header_col, right_header_col=right_header_col) }}
 {% endmacro %}
 
-{% macro prompt_feature_list_item(feature=none, id=none, show_buttons=none, hidden=true)%}
-	{% if feature is none %}
+{% macro steering_vectors_list_item(steering_vector=none, id=none, show_buttons=none, hidden=true)%}
+	{% if steering_vector is none %}
 		{% set static_render=false %}
 	{% else %}
 		{% set static_render=true %}
@@ -255,7 +255,7 @@
 	{% endif %}
 
 	{% if static_render %}
-		{% set name = feature.name %}
+		{% set name = steering_vector.name %}
 	{% else %}
 		{% set name = '' %}
 	{% endif %}
@@ -265,11 +265,65 @@
 
 	{% if not static_render and show_buttons %}
 		{% set right_header_col %}
-			<button class="delete_feature_button">&#10006;</button>
-			<button class="get_activs_button" onclick="getFeatureActivsOnPrompt(this)">Get activs</button>
+			<button onclick="deleteSteeringVector(this)">&#10006;</button>
 		{% endset %}
 	{% else %}
 		{% set right_header_col = '' %}
+	{% endif %}
+
+	{% if not static_render or steering_vector.description == '' or steering_vector.description is none %}
+		{% set desc_style %}display: none;{% endset %}
+	{% else %}
+		{% set desc_style = '' %}
+	{% endif %}
+
+	{% if not static_render %}
+		{% set description='' %}
+		{% set coefficient='' %}
+		{% set token_pos='' %}
+		{% set do_clamp='' %}
+	{% else %}
+		{% set description=steering_vector.description %}
+		{% set coefficient=steering_vector.coefficient %}
+		{% set token_pos=steering_vector.token_pos %}
+		{% set do_clamp=steering_vector.do_clamp %}
+	{% endif %}
+	
+	{% set contents %}
+		<p class="description" style="{{ desc_style }}">{{description}}</p>
+		<p>Steering strength: <span class="coefficient">{{coefficient}}</span></p>
+		<p>Token: <span class="token_pos">{{token_pos}}</span></p>
+		<p>Uses clamp-style steering? <span class="do_clamp">{{do_clamp}}</span></p>
+
+		<details class="list_details small_div">
+			<summary class="clickable">Feature vector details</summary>
+			{{ feature_info_contents(feature=steering_vector.feature_info) }}
+		</details>
+	{% endset %}
+
+	{% set style='' %}
+	{% if not static_render %}
+		{% if id is none %}
+			{% set id='steering_vectors_list_template' %}
+		{% endif %}
+
+		{% if hidden %}
+			{% set style='display: none' %}
+		{% endif %}
+	{% else %}
+		{% if id is none %}
+			{% set id='' %}
+		{% endif %}
+	{% endif %}
+
+	{{ list_item(id, contents, class='steering_vectors_list_item', style=style, left_header_col=left_header_col, right_header_col=right_header_col) }}
+{% endmacro %}
+
+{% macro feature_info_contents(feature=none) %}
+	{% if feature is none %}
+		{% set static_render=false %}
+	{% else %}
+		{% set static_render=true %}
 	{% endif %}
 
 	{% if not static_render or feature.description == '' or feature.description is none %}
@@ -325,16 +379,48 @@
 		{% endif %}
 	{% endif %}
 	
-	{% set contents %}
-		<p class="description" style="{{ desc_style }}">{{description}}</p>
-		<p><b>Input layer:</b> Layer <span class="input_layer">{{input_layer}}</span> <span class="input_sublayer">{{input_sublayer}}</span></p>	
-		<p><b>Output layer:</b> Layer <span class="output_layer">{{output_layer}}</span> <span class="output_sublayer">{{output_sublayer}}</span></p>	
-		<p><b>Feature type:</b> <span class="feature_type">{{feature_type}}</span></p>
+	<p class="description" style="{{ desc_style }}">{{description}}</p>
+	<p><b>Input layer:</b> Layer <span class="input_layer">{{input_layer}}</span> <span class="input_sublayer">{{input_sublayer}}</span></p>	
+	<p><b>Output layer:</b> Layer <span class="output_layer">{{output_layer}}</span> <span class="output_sublayer">{{output_sublayer}}</span></p>	
+	<p><b>Feature type:</b> <span class="feature_type">{{feature_type}}</span></p>
 
-		<p class="sae_name_wrap" style="{{sae_name_style}}"><b>Feature comes from dictionary "</b><span class="sae_name">{{sae_name}}</span><b>"</b></p>
-		<p class="feature_idx_wrap" style="{{feature_idx_style}}"><b>Feature index:</b> <span class="feature_idx">{{feature_idx}}</span></p>
-		<p class="attn_head_wrap" style="{{attn_head_style}}"><b>Attention head:</b> <span class="attn_head">{{attn_head}}</span></p>
-		<div class="obs_tokens_wrap" style="{{obs_tokens_style}}"><b>Logit tokens/weights:</b> <div class="obs_tokens" style="display: inline-block">{{obs_tokens}}</div></div>
+	<p class="sae_name_wrap" style="{{sae_name_style}}"><b>Feature comes from dictionary "</b><span class="sae_name">{{sae_name}}</span><b>"</b></p>
+	<p class="feature_idx_wrap" style="{{feature_idx_style}}"><b>Feature index:</b> <span class="feature_idx">{{feature_idx}}</span></p>
+	<p class="attn_head_wrap" style="{{attn_head_style}}"><b>Attention head:</b> <span class="attn_head">{{attn_head}}</span></p>
+	<div class="obs_tokens_wrap" style="{{obs_tokens_style}}"><b>Logit tokens/weights:</b> <div class="obs_tokens" style="display: inline-block">{{obs_tokens}}</div></div>
+{% endmacro %}
+
+{% macro prompt_feature_list_item(feature=none, id=none, show_buttons=none, hidden=true)%}
+	{% if feature is none %}
+		{% set static_render=false %}
+	{% else %}
+		{% set static_render=true %}
+	{% endif %}
+
+	{% if show_buttons is none %}
+		{% set show_buttons = not static_render %}
+	{% endif %}
+
+	{% if static_render %}
+		{% set name = feature.name %}
+	{% else %}
+		{% set name = '' %}
+	{% endif %}
+	{% set left_header_col %}
+		<span class="name">{{name}}</span></b>
+	{% endset %}
+
+	{% if not static_render and show_buttons %}
+		{% set right_header_col %}
+			<button class="delete_feature_button">&#10006;</button>
+			<button class="get_activs_button" onclick="getFeatureActivsOnPrompt(this)">Get activs</button>
+		{% endset %}
+	{% else %}
+		{% set right_header_col = '' %}
+	{% endif %}
+
+	{% set contents %}
+		{{ feature_info_contents(feature=feature) }}
 	{% endset %}
 
 	{% set dynamic_contents='' %}
