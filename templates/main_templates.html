@@ -175,7 +175,7 @@
 			<div id="no_model_loaded_div">
 				<p>No model loaded yet.</p>
 				<p id="load_model_error" style="color: red; display: none"></p>
-				<p><input id="model_load_path" placeholder="Model name" value="gpt2"/><button onclick="loadModel()" id="load_model_button">Load model</button></p>
+				<p><input id="model_load_path" placeholder="Model name" value="gpt2"/> Load model in half-precision: <input id="model_load_half" type="checkbox" checked="false"/> <button onclick="loadModel()" id="load_model_button">Load model</button></p>
 			</div>
 		{% else %}
 			{% set model_name=sess.model_info.name %}
@@ -196,15 +196,18 @@
 
 				async function loadModel(){
 					$('#model_load_path').disabled = true;
+					$("#model_load_half").disabled = true;
 					$('#load_model_button').disabled = true;
 					const originalLoadButtonText = $('#load_model_button').innerText;
 					$('#load_model_button').innerHTML = "Model loading...";
 
 					const model_path = $('#model_load_path').value;
-					const modelResp = await fetchJson('/model', "POST", {'name': model_path});
+					const dtype_str = $("#model_load_half").checked ? 'bfloat16' : null;
+					const modelResp = await fetchJson('/model', "POST", {'name': model_path, 'dtype_str': dtype_str});
 
 					$('#model_load_path').disabled = false;
 					$('#load_model_button').disabled = false;
+					$("#model_load_half").disabled = false;
 					$('#load_model_button').innerHTML = originalLoadButtonText;
 
 					const errorEle = $("#load_model_error");
