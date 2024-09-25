@@ -1531,7 +1531,7 @@ class Prompt:
 
 	@no_grad()
 	def get_feature_ln_constant_at_token(self, feature : FeatureInfo, token_pos : int, use_unsteered : bool = False):
-		if feature.input_layer.sublayer == Sublayer.ATTN_IN:
+		if feature.input_layer.sublayer == Sublayer.ATTN_IN or (feature.input_layer.parallel_attn_mlp and feature.input_layer.sublayer == Sublayer.MLP_IN):
 			pre_ln_layer = LayerSublayer(feature.input_layer.layer, Sublayer.RESID_PRE)
 		elif feature.input_layer.sublayer == Sublayer.MLP_IN:
 			pre_ln_layer = LayerSublayer(feature.input_layer.layer, Sublayer.RESID_MID)
