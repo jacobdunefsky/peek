@@ -827,6 +827,8 @@ class SAEConfig:
 	dtype : torch.dtype = torch.float32
 	act_fn : str = "relu"
 
+	top_k : Optional[int] = None
+
 	def __post_init__(self):
 		if self.d_out is None: self.d_out = self.d_in
 
@@ -842,7 +844,9 @@ class SAEConfig:
 			num_features=d['num_features'],
 			d_out=d.get('d_out', None),
 			dtype=DTYPE_DICT[d.get('dtype', None)],
-			act_fn=d.get('act_fn', 'relu')
+			act_fn=d.get('act_fn', 'relu'),
+
+			top_k=d.get('top_k', None)
 		)
 	
 if backend_import_cfg.import_expensive_modules:
@@ -880,8 +884,17 @@ class SAE(sae_superclass):
 				)
 			)
 
-		act_fns = {'relu': torch.nn.functional.relu, 'id': lambda x: x}
+		act_fns = {
+			'relu': torch.nn.functional.relu,
+			'id': lambda x: x,
+			'top_k': lambda x: self._top_k(x)
+		}
 		self.act_fn = act_fns[self.cfg.act_fn]
+	
+	def _top_k(self, x):
+		acts = torch.zeros(x.shape, dtype=x.dtype).to(device=x.device)
+		vals, idxs = torch.topk(x, k=self.cfg.top_k)
+		return torch.scatter(acts, -1, idxs, vals)
 	
 	def get_activs(self, x):
 		pre_acts = torch.einsum('df, ...d -> ...f', self.W_enc, x)
