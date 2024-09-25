@@ -54,6 +54,9 @@ if backend_import_cfg.import_expensive_modules:
 		device = 'cuda'
 	else:
 		device = 'cpu'
+	
+	dtype = torch.float32
+
 else:
 	torch = Dummy(name='torch')
 	hf_hub = Dummy()
@@ -84,6 +87,14 @@ DTYPE_DICT = {
 	'torch.int32': torch.int32,
 	'torch.int64': torch.int64,
 }
+
+def _to_numpy(x):
+	x = x.detach().cpu()
+	try:
+		x = x.numpy()
+	except TypeError:
+		x = x.to(torch.float32).numpy()
+	return x
 
 # NOTE: currently, doesn't support sublayers beyond the following
 class Sublayer(enum.Enum):
@@ -375,8 +386,8 @@ class FeatureInfo:
 				with in_zipfile.open(os.path.join(dirname, tensors_filename), "r") as fp:
 					tensor_bytes = fp.read()
 				tensors = safetensors.torch.load(tensor_bytes)
-				new_info.encoder_vector = tensors['encoder_vector'].to(device=device)
-				new_info.decoder_vector = tensors['decoder_vector'].to(device=device)
+				new_info.encoder_vector = tensors['encoder_vector'].to(device=device, dtype=dtype)
+				new_info.decoder_vector = tensors['decoder_vector'].to(device=device, dtype=dtype)
 					
 		return new_info
 
@@ -391,10 +402,10 @@ class FeatureInfo:
 		else: feature.name = name
 		if description is not None: feature.description = description
 
-		feature.encoder_vector = sae.W_enc[:, feature_idx].clone().detach().to(device=device)
+		feature.encoder_vector = sae.W_enc[:, feature_idx].clone().detach().to(device=device, dtype=dtype)
 		#feature.encoder_bias = (sae.b_enc[feature_idx] - (sae.b_dec @ sae.W_enc)[feature_idx]).item()
 		feature.encoder_bias = sae.b_enc[feature_idx].item()
-		feature.decoder_vector = sae.W_dec[feature_idx].clone().detach().to(device=device)
+		feature.decoder_vector = sae.W_dec[feature_idx].clone().detach().to(device=device, dtype=dtype)
 
 		feature.input_layer = sae_info.input_layer
 		feature.output_layer = sae_info.output_layer
@@ -426,7 +437,7 @@ class FeatureInfo:
 			except AssertionError:
 				raise Exception(f"Invalid token: \"{token_str}\" is not a single token")
 			observable[token_idx] = weight
-		observable = observable.to(device=device)
+		observable = observable.to(device=device, dtype=dtype)
 
 		feature.encoder_bias = 0
 		feature.output_layer = LayerSublayer(len(model.blocks), Sublayer.LOGITS)
@@ -489,15 +500,19 @@ class FeatureInfo:
 	@no_grad()
 	def get_activs(self, tensor, use_relu=None):
 		# tensor: [batch, tokens, dim]
+		if tensor.dtype != self.encoder_vector.dtype:
+			# hack to take care of transformerlens forcibly storing layernorm activations as float32
+			tensor = tensor.to(dtype=self.encoder_vector.dtype)
 		pre_acts = torch.einsum('d, ...d -> ...', self.encoder_vector, tensor)
 		acts = pre_acts + self.encoder_bias
 		if use_relu is None: use_relu = self.use_relu
 		if use_relu: acts = torch.nn.functional.relu(acts)
-		return acts.detach().cpu().numpy()
+		
+		return _to_numpy(acts)
 
 	@no_grad()
 	def get_deembeddings(self, model : HookedTransformer):
-		return (model.W_E @ self.encoder_vector).detach().cpu().numpy()
+		return _to_numpy(model.W_E @ self.encoder_vector)
 
 ### Computational=path-related classes/methods ###
 
@@ -900,6 +915,9 @@ class SAE(sae_superclass):
 		return torch.scatter(acts, -1, idxs, vals)
 	
 	def get_activs(self, x):
+		if x.dtype != self.W_enc.dtype:
+			# hack to take care of transformerlens forcibly storing layernorm activations as float32
+			x = x.to(dtype=self.W_enc.dtype)
 		pre_acts = torch.einsum('df, ...d -> ...f', self.W_enc, x)
 		acts = self.act_fn(pre_acts + self.b_enc)
 		return acts
@@ -1105,19 +1123,20 @@ class SAEInfo:
 		dirname = os.path.dirname(json_path)
 		sae_json_path = os.path.join(dirname, d['sae_filename']) 
 		sae_info.sae = SAE.load(sae_json_path, load_tensors=load_tensors, in_zipfile=in_zipfile)
+		sae_info.sae.to(dtype=dtype)
 
 		return sae_info
 
 	# now for some actual circuit analysis methods
 	@no_grad()
 	def get_feature_input_invariant_scores(self, feature : FeatureInfo):
-		return (self.sae.W_dec.to(device=device) @ feature.encoder_vector).detach().cpu().numpy()
+		return _to_numpy(self.sae.W_dec.to(device=device, dtype=dtype) @ feature.encoder_vector)
 
 	@no_grad()
 	def get_feature_cossims(self, feature : FeatureInfo):
 		normed_W_dec = torch.einsum('ij,i->ij', self.sae.W_dec, torch.linalg.norm(self.sae.W_dec, dim=1))
 		normed_vector = feature.encoder_vector / torch.linalg.norm(feature.encoder_vector)
-		return (normed_W_dec @ normed_vector).detach().cpu().numpy()
+		return _to_numpy(normed_W_dec @ normed_vector)
 
 	def __str__(self):
 		return self.short_name
@@ -1282,7 +1301,7 @@ class SteeringVector:
 				hidden_state[:, self.token_pos] += self.feature_info.decoder_vector * (self.coefficient - feature_activ)
 			else:
 				if self.do_clamp:
-					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.decoder_vector, self.coefficient - torch.from_numpy(feature_activ).to(device=device))
+					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.decoder_vector, self.coefficient - torch.from_numpy(feature_activ).to(device=device, dtype=dtype))
 				else:
 					hidden_state[0] += self.feature_info.decoder_vector * self.coefficient
 			return hidden_state
@@ -1504,8 +1523,8 @@ class Prompt:
 		activs = None
 		inp = self.cache[sae_info.input_layer.to_hookpoint_str()][0, token_pos]
 		try:
-			sae_info.sae.to(device=device)
-			activs = sae_info.sae.get_activs(inp).detach().cpu().numpy()
+			sae_info.sae.to(device=device, dtype=dtype)
+			activs = _to_numpy(sae_info.sae.get_activs(inp))
 		finally:
 			sae_info.sae.cpu()
 		return activs
@@ -1654,7 +1673,7 @@ class Prompt:
 				cur_layer = LayerSublayer(layer=sae_info.output_layer.layer, sublayer=sae_info.output_layer.sublayer, parallel_attn_mlp=parallel_attn_mlp)
 				if not (cur_layer < max_layer): continue
 
-				sae_info.sae.to(device=device)
+				sae_info.sae.to(device=device, dtype=dtype)
 				activs = sae_info.sae.get_activs(
 					self.cache[sae_info.input_layer.to_hookpoint_str()][0,attrib.token_pos]
 				)
@@ -1852,13 +1871,16 @@ class ModelInfo:
 	n_layers : int
 	n_params : int
 
+	dtype : Optional[torch.dtype] = None
+
 	@classmethod
 	def load_from_hooked_transformer(cls, model):
 		return cls(
 			name=model.cfg.model_name,
 			path=model.cfg.model_name,
 			n_layers=model.cfg.n_layers,
-			n_params=model.cfg.n_params
+			n_params=model.cfg.n_params,
+			dtype=model.dtype
 		)
 
 	def serialize(self):
@@ -1867,6 +1889,7 @@ class ModelInfo:
 			'path': self.path,
 			'n_layers': self.n_layers,
 			'n_params': self.n_params,
+			'dtype': str(self.dtype)
 		}
 	
 	@classmethod
@@ -1875,7 +1898,8 @@ class ModelInfo:
 			name=d['name'],
 			path=d['path'],
 			n_layers=d['n_layers'],
-			n_params=d['n_params']
+			n_params=d['n_params'],
+			dtype=DTYPE_DICT[d.get('dtype', None)]
 		)
 
 class Session:
@@ -2079,8 +2103,12 @@ class Session:
 			name=name,
 			path=path,
 			n_layers=self.model.cfg.n_layers,
-			n_params=self.model.cfg.n_params
+			n_params=self.model.cfg.n_params,
+			dtype=self.model.W_E.dtype
 		)
+
+		global dtype
+		dtype = self.model.W_E.dtype
 
 	def get_model_info(self):
 		return self.model_info.serialize()

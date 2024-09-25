@@ -48,9 +48,10 @@ def load_model():
 		name = request.json['name']
 	except KeyError:
 		name = None
-	
+
+	dtype_str = request.json.get('dtype_str', None)
 	try:
-		sess.load_model_from_pretrained(name)
+		sess.load_model_from_pretrained(name, dtype_str=dtype_str)
 	except ValueError:
 		# TODO: use standardized error codes instead of strings
 		return {'error': 'Invalid model name'}, 400
