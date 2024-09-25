@@ -362,6 +362,11 @@ def remove_steering_vector(prompt_idx, steering_vector_idx):
 	sess.remove_steering_vector(prompt_idx, steering_vector_idx)
 	return {}, 204
 
+@app.get('/prompts/<int:prompt_idx>/generate')
+def generate_tokens(prompt_idx):
+	use_steering_vectors = not 'no_steering' in request.args
+	return {'new_tokens': sess.prompt_list.dict[prompt_idx].generate_tokens(sess.model, use_steering_vectors=use_steering_vectors, temperature=float(request.args.get('temperature', 0.8)))}
+
 import traceback
 @app.post('/session/load')
 def load_session():

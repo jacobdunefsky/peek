@@ -1266,7 +1266,7 @@ class SteeringVector:
 				hidden_state[:, self.token_pos] += self.feature_info.decoder_vector * (self.coefficient - feature_activ)
 			else:
 				if self.do_clamp:
-					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.decoder_vector, self.coefficient - feature_activ)
+					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.decoder_vector, self.coefficient - torch.from_numpy(feature_activ).to(device=device))
 				else:
 					hidden_state[0] += self.feature_info.decoder_vector * self.coefficient
 			return hidden_state
@@ -1433,10 +1433,10 @@ class Prompt:
 			self.tokens = new_tokens
 
 			# cache management for steering vectors
+			self.logits = logits
+			self.cache = cache
 			if len(self.steering_vectors.dict) == 0:
-				self.logits = logits
 				self.unsteered_logits = None
-				self.cache = cache
 				self.unsteered_cache = None
 			else:
 				self.unsteered_logits = logits
@@ -1798,11 +1798,6 @@ class Prompt:
 			assert(attrib is not None)
 			# make FeatureInfo
 			new_feature = FeatureInfo.init_from_attn_pullback(model, attrib.feature_info, child.attn_layer, child.attn_head)
-
-			# NOTE: this has been factored into populate_attrib_info()
-			"""new_attrib.attn_factor = self.cache[
-				f'blocks.{child.attn_layer}.attn.hook_pattern'
-			][0, child.attn_head, attrib.token_pos, child.token_pos].item()"""
 		elif child.component_type == ComponentType.EMBED:
 			embedding_vec = model.W_E[child.embed_vocab_idx]
 			new_feature = FeatureInfo.init_from_vector(model, LayerSublayer(0, Sublayer.EMBED), embedding_vec, name=f'embed_{child.embed_vocab_idx}', contravariant=True)
@@ -1823,6 +1818,16 @@ class Prompt:
 		self.steering_vectors.remove(steering_vector_id)
 		if model is not None:
 			self.run_with_steering_vectors(model)
+
+	@no_grad()
+	def generate_tokens(self, model, max_new_tokens=20, temperature=0.8, use_steering_vectors=True):
+		hooks = []
+		if use_steering_vectors and len(self.steering_vectors.dict) > 0:
+			for steering_vector in self.steering_vectors.dict.values():
+				hooks.extend(steering_vector.make_hooks())
+		with model.hooks(fwd_hooks=hooks):
+			generation = model.generate("".join(self.tokens), max_new_tokens=max_new_tokens, use_past_kv_cache=False)
+		return generation
 
 @dataclass
 class ModelInfo:

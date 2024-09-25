@@ -932,8 +932,7 @@
 					resetAddFeatureForm();
 				</script>
 			</details>
-			<!-- below is the div for steering vectors.
-			TODO: actually finish this. -->
+			<!-- below is the div for steering vectors -->
 			<div class="small_div">
 				<script type="text/javascript">
 					async function getSteeringVectorsForPrompt(curPrompt){
@@ -1020,6 +1019,27 @@
 					</details>
 				</details></div>
 				<div id="steering_vectors_list" class="list_div"></div>
+			</div>
+
+			<!-- below is the div for token generation -->
+			<div class="small_div">
+				<script type="text/javascript">
+					async function generateTokens(curPrompt){
+						var curPromptIdx;
+						if(curPrompt == undefined){
+							curPromptIdx = window.curPromptIdx.data;
+						}
+						else {
+							curPromptIdx = curPrompt.id;
+						}
+						const useSteering = $("#generate_use_steering").checked ;
+						const newTokens = (await fetchJson("/prompts/" + curPromptIdx + "/generate" + (useSteering?"":"?no_steering"))).json['new_tokens'];
+						$("#generated_tokens").innerText = newTokens;
+					}
+				</script>
+				<p>Generate tokens from the current prompt</p>
+				<p id="generated_tokens" class="small_div">No tokens have been generated yet.</p>
+				<p><button onclick="generateTokens()">Generate</button> Use steering vectors: <input type="checkbox" id="generate_use_steering" checked/></p>
 			</div>
 
 			</div>
