@@ -220,7 +220,10 @@ class LayerSublayer:
 		elif self.sublayer == Sublayer.MLP_IN:
 			if self.parallel_attn_mlp:
 				sublayer_val = Sublayer.ATTN_IN.value
-		return self.layer + self.sublayer.value/Sublayer.RESID_POST.value
+		elif self.sublayer == Sublayer.MLP_OUT:
+			sublayer_val = Sublayer.RESID_POST.value
+
+		return self.layer + sublayer_val/Sublayer.RESID_POST.value
 	def __lt__(self, other):
 		return self.val() < other.val()
 	def __le__(self, other):
