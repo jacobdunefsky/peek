@@ -1674,7 +1674,7 @@ class Prompt:
 				for layer in range(len(model.blocks)):
 					mlp_out = self.cache[f'blocks.{layer}.hook_mlp_out'][0, attrib.token_pos]
 					mlp_contribs.append(torch.dot(vector, mlp_out))
-				top_mlp_idxs = torch.topk(torch.tensor(mlp_contribs), k=top_mlp_k)[1].to_list()
+				top_mlp_idxs = torch.topk(torch.tensor(mlp_contribs), k=top_mlp_k)[1].tolist()
 
 			# get top contribs for each SAE
 			top_contribs_per_sae = []
