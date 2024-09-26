@@ -1310,7 +1310,7 @@ class SteeringVector:
 
 		return [
 			(self.feature_info.input_layer.to_hookpoint_str(), in_hook),
-			(self.feature_info.output_layer.to_hookpoint_str(), out_hook)
+			(self.feature_info.output_layer.to_hookpoint_str() if not self.use_encoder else self.feature_info.input_layer.to_hookpoint_str() , out_hook)
 		]
 
 ###
