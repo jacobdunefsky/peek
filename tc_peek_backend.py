@@ -1303,7 +1303,7 @@ class SteeringVector:
 				hidden_state[:, self.token_pos] += vector * (self.coefficient - feature_activ)
 			else:
 				if self.do_clamp:
-					hidden_state[0] += torch.einsum('d, t -> td', .ector, self.coefficient - torch.from_numpy(feature_activ).to(device=device, dtype=dtype))
+					hidden_state[0] += torch.einsum('d, t -> td', vector, self.coefficient - torch.from_numpy(feature_activ).to(device=device, dtype=dtype))
 				else:
 					hidden_state[0] += vector * self.coefficient
 			return hidden_state
