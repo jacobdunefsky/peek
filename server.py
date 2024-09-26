@@ -235,9 +235,10 @@ def delete_comp_path_by_id(prompt_idx, path_idx):
 @app.put('/prompts/<int:prompt_idx>/comp_paths/<path_idx>', defaults={'feature_pos': -1})
 def select_and_view_comp_path(prompt_idx, path_idx, feature_pos):
 	top_k_children = request.args.get('k', 7)
+	top_mlp_k = request.args.get('top_mlp_k', 5) #TODO: set to None by default; allow this to be changed client-side
 	if path_idx == 'default': path_idx = None
 	else: path_idx = int(path_idx)
-	return sess.select_and_view_comp_path(prompt_idx, path_idx=path_idx, feature_pos=feature_pos, top_k_children=top_k_children)
+	return sess.select_and_view_comp_path(prompt_idx, path_idx=path_idx, feature_pos=feature_pos, top_k_children=top_k_children, top_mlp_k=top_mlp_k)
 
 @app.post('/prompts/<int:prompt_idx>/comp_paths/<path_idx>/nodes/<int:node_idx>/extend')
 @app.post('/prompts/<int:prompt_idx>/comp_paths/<path_idx>/extend', defaults={'node_idx': -1})

@@ -1659,7 +1659,7 @@ class Prompt:
 		return components, contribs
 
 	@no_grad()
-	def get_top_sae_contribs(self, model : HookedTransformer, sae_dict : IdDict, attrib : AttribInfo, k=7):
+	def get_top_sae_contribs(self, model : HookedTransformer, sae_dict : IdDict, attrib : AttribInfo, k=7, top_mlp_k:Optional[int]=None):
 		with sae_dict.lock:
 			feature = attrib.feature_info
 			vector = feature.encoder_vector
@@ -1667,13 +1667,23 @@ class Prompt:
 			parallel_attn_mlp = model.cfg.parallel_attn_mlp
 			max_layer = LayerSublayer(layer=feature.input_layer.layer, sublayer=feature.input_layer.sublayer, parallel_attn_mlp=parallel_attn_mlp)
 
-			# first, get top contribs for each SAE
+			# if top_mlp_k is set, then only look at SAE features from the top_mlp_k MLP sublayers
+			top_mlp_idxs = None
+			if top_mlp_k is not None:
+				mlp_contribs = []
+				for layer in range(len(model.blocks)):
+					mlp_out = self.cache[f'blocks.{layer}.hook_mlp_out'][0, attrib.token_pos]
+					mlp_contribs.append(torch.dot(vector, mlp_out))
+				top_mlp_idxs = torch.topk(torch.tensor(mlp_contribs), k=top_mlp_k)[1].to_list()
+
+			# get top contribs for each SAE
 			top_contribs_per_sae = []
 			top_features_per_sae = []
 			sae_idxs = []
 			for sae_idx, sae_info in sae_dict.dict.items():
 				cur_layer = LayerSublayer(layer=sae_info.output_layer.layer, sublayer=sae_info.output_layer.sublayer, parallel_attn_mlp=parallel_attn_mlp)
 				if not (cur_layer < max_layer): continue
+				if top_mlp_idxs is not None and cur_layer.layer not in top_mlp_idxs: continue
 
 				sae_info.sae.to(device=device, dtype=dtype)
 				activs = sae_info.sae.get_activs(
@@ -1720,10 +1730,10 @@ class Prompt:
 		return components, contribs
 
 	@no_grad()
-	def get_top_contribs(self, model : HookedTransformer, sae_dict : IdDict, attrib : AttribInfo, k=7):
+	def get_top_contribs(self, model : HookedTransformer, sae_dict : IdDict, attrib : AttribInfo, k=7, top_mlp_k=None):
 		# print(f"Getting top contribs for node at layer {attrib.feature_info.input_layer}")
 		attn_components, attn_contribs = self.get_top_attn_contribs(model, attrib, k=k)
-		sae_components, sae_contribs = self.get_top_sae_contribs(model, sae_dict, attrib, k=k)
+		sae_components, sae_contribs = self.get_top_sae_contribs(model, sae_dict, attrib, k=k, top_mlp_k=top_mlp_k)
 
 		embedding_component = ComponentInfo(
 			component_type=ComponentType.EMBED,
@@ -2426,7 +2436,7 @@ class Session:
 		new_comp_path.nodes = [new_attrib]
 		prompt.cur_comp_path = new_comp_path
 
-	def select_and_view_comp_path(self, prompt_idx, path_idx=None, feature_pos=-1, top_k_children=7):
+	def select_and_view_comp_path(self, prompt_idx, path_idx=None, feature_pos=-1, top_k_children=7, top_mlp_k=None):
 		retdict = {}
 
 		# get computational path
@@ -2461,7 +2471,7 @@ class Session:
 			if not comp_path.is_outdated:
 				if node.top_child_components is None:
 					# print(f"About to get top contribs for node at layer {node.feature_info.input_layer}")
-					top_components, top_contribs = prompt.get_top_contribs(self.model, self.sae_list, node, k=top_k_children)
+					top_components, top_contribs = prompt.get_top_contribs(self.model, self.sae_list, node, k=top_k_children, top_mlp_k=top_mlp_k)
 					node.top_child_components = top_components
 					node.top_child_contribs = top_contribs
 				nodedict['top_children'] = []
@@ -2489,23 +2499,6 @@ class Session:
 
 			retdict['nodes'].append(nodedict)
 
-		"""retdict['top_children'] = []
-		if not comp_path.is_outdated and all_attribs[feature_pos].feature_info.encoder_vector is not None:
-			top_components, top_contribs = prompt.get_top_contribs(self.model, self.sae_list, all_attribs[feature_pos], k=top_k_children)
-			for component, contrib in zip(top_components, top_contribs):
-				childdict = {}
-				childdict['component_type'] = component.component_type.name
-				childdict['token_pos'] = component.token_pos
-
-				childdict['attn_head'] = component.attn_head
-				childdict['attn_layer'] = component.attn_layer
-				childdict['sae_idx'] = component.sae_idx
-				childdict['feature_idx'] = component.feature_idx
-				childdict['embed_vocab_idx'] = component.embed_vocab_idx
-
-				childdict['contrib'] = contrib
-
-				retdict['top_children'].append(childdict)"""
 		if not comp_path.is_outdated:
 			retdict['top_children'] = retdict['nodes'][feature_pos]['top_children']
 		else:
