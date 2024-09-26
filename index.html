@@ -1854,6 +1854,7 @@
 					<p><textarea class="description_input" placeholder="Description" style="width: 100%"></textarea></p>
 					<p>Steering strength: <input class="steering_coefficient" type="number" step="any" value="1.0"/></p>
 					<p>Use clamp-style steering? <input class="do_clamp" type="checkbox"/></p>
+					<p>Steer with encoder vector? <input class="use_encoder" type="checkbox"/></p>
 					<p>Steer on all tokens? <input class="all_tokens" type="checkbox"/></p>
 					<button onclick="addSteeringVector()">Add</button>
 					<script type="text/javascript">
@@ -1866,6 +1867,7 @@
 							const postDict = {
 								'steering_coefficient': steeringCoefficient,
 								'do_clamp': formEle.querySelector(".do_clamp").checked,
+								'use_encoder': formEle.querySelector(".use_encoder").checked,
 								'all_tokens': formEle.querySelector(".all_tokens").checked,
 							};
 							if(name != ""){

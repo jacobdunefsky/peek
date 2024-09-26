@@ -353,9 +353,10 @@ def add_steering_vector(prompt_idx, feature_pos):
 	description = request.json.get('description', None)
 	steering_coefficient = float(request.json.get('steering_coefficient', 1.0))
 	do_clamp = bool(request.json.get('do_clamp', True))
+	use_encoder = bool(request.json.get('use_encoder', False))
 	all_tokens = bool(request.json.get('all_tokens', False))
 
-	new_id = sess.add_steering_vector_from_comp_path_to_prompt(prompt_idx, comp_path_idx=None, feature_pos=feature_pos, do_clamp=do_clamp, steering_coefficient=steering_coefficient, name=name, description=description, all_tokens=all_tokens)
+	new_id = sess.add_steering_vector_from_comp_path_to_prompt(prompt_idx, comp_path_idx=None, feature_pos=feature_pos, do_clamp=do_clamp, steering_coefficient=steering_coefficient, name=name, description=description, all_tokens=all_tokens, use_encoder=use_encoder)
 	return {'steering_vector_id': new_id}
 
 @app.delete('/prompts/<int:prompt_idx>/steering_vectors/<int:steering_vector_idx>')

@@ -1218,6 +1218,7 @@ class SteeringVector:
 
 	coefficient : float = 1.0
 	do_clamp : bool = True
+	use_encoder : bool = False
 
 	name : Optional[str] = None
 	description : Optional[str] = None
@@ -1297,13 +1298,14 @@ class SteeringVector:
 						hidden_state[0] #TODO: allow for batching?
 					)
 		def out_hook(hidden_state, hook):
+			vector = self.decoder_vector if not self.use_encoder else self.use_encoder
 			if self.token_pos is not None:
-				hidden_state[:, self.token_pos] += self.feature_info.decoder_vector * (self.coefficient - feature_activ)
+				hidden_state[:, self.token_pos] += self.feature_info.vector * (self.coefficient - feature_activ)
 			else:
 				if self.do_clamp:
-					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.decoder_vector, self.coefficient - torch.from_numpy(feature_activ).to(device=device, dtype=dtype))
+					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.vector, self.coefficient - torch.from_numpy(feature_activ).to(device=device, dtype=dtype))
 				else:
-					hidden_state[0] += self.feature_info.decoder_vector * self.coefficient
+					hidden_state[0] += self.feature_info.vector * self.coefficient
 			return hidden_state
 
 		return [
@@ -2643,7 +2645,7 @@ class Session:
 	
 	# SteeringVector-related methods
 	
-	def add_steering_vector_from_comp_path_to_prompt(self, prompt_idx, comp_path_idx, steering_coefficient, feature_pos=-1, do_clamp=True, name=None, description=None, all_tokens=False):
+	def add_steering_vector_from_comp_path_to_prompt(self, prompt_idx, comp_path_idx, steering_coefficient, feature_pos=-1, do_clamp=True, use_encoder=False, name=None, description=None, all_tokens=False):
 		prompt = self.prompt_list.dict[prompt_idx]
 		if comp_path_idx is None:
 			comp_path = prompt.cur_comp_path
@@ -2658,6 +2660,7 @@ class Session:
 			token_pos=attrib.token_pos if not all_tokens else None,
 			coefficient=steering_coefficient,
 			do_clamp=do_clamp,
+			use_encoder=use_encoder,
 			name=name if name is not None else feature.name,
 			description=description if description is not None else feature.description
 		)
