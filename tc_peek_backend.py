@@ -1298,14 +1298,14 @@ class SteeringVector:
 						hidden_state[0] #TODO: allow for batching?
 					)
 		def out_hook(hidden_state, hook):
-			vector = self.decoder_vector if not self.use_encoder else self.use_encoder
+			vector = self.feature_info.decoder_vector if not self.use_encoder else self.feature_info.encoder_vector
 			if self.token_pos is not None:
-				hidden_state[:, self.token_pos] += self.feature_info.vector * (self.coefficient - feature_activ)
+				hidden_state[:, self.token_pos] += vector * (self.coefficient - feature_activ)
 			else:
 				if self.do_clamp:
-					hidden_state[0] += torch.einsum('d, t -> td', self.feature_info.vector, self.coefficient - torch.from_numpy(feature_activ).to(device=device, dtype=dtype))
+					hidden_state[0] += torch.einsum('d, t -> td', .ector, self.coefficient - torch.from_numpy(feature_activ).to(device=device, dtype=dtype))
 				else:
-					hidden_state[0] += self.feature_info.vector * self.coefficient
+					hidden_state[0] += vector * self.coefficient
 			return hidden_state
 
 		return [
