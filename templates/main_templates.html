@@ -8,365 +8,368 @@
 {% endif %}
 
 <div id="session_info_div" class="big_div">
-	<!-- session name -->
-	{% if static_render %}
-		<h1 id="session_name">{{ sess.name }}</h1>
-	{% else %}
-		<h1 id="session_name"></h1>
-		<div id="rename_session_form" style="display: none">
-			<input type="text" style="font-size: 32pt; font-weight: bold;" class="name"/><button id="rename_session_button">Rename session</button>
-		</div>
-	{% endif %}
-	
-	<!-- session description -->
-	{% if static_render %}
-		{% if sess.description != "" and sess.description is not none %} 
-		<div id="session_description" class="description">{{ sess.description }}</div>
-		{% endif %}
-	{% else %}
-		<div id="session_description_wrapper">
-			<div id="session_description_placeholder" style="display: none" class="description_placeholder">
-				Click to add a description
-			</div>
-			<div id="session_description" class="description"></div>
-		</div>
-		<div id="edit_session_description_form" style="display: none">
-			<textarea class="description_input" placeholder="Description" style="flex-grow: 1"></textarea><button id="edit_session_description_button">Submit</button>
-		</div>
-	{% endif %}
-
-	<br/>
-
-	<!-- session loading/saving -->
-	{% if not static_render %}
-		<div>
-			<p style="display: none; color: red" id="load_save_error"></p>
-			<p><input type="text" id="session_path" placeholder="Session path"/><button onclick="loadSession()" id="load_session_button">Load session</button><button onclick="saveSession()" id="save_session_button">Save session</button> <label for="save_tensors_checkbox">Save session with tensors: </label><input type="checkbox" checked id="save_tensors_checkbox"/></p>
-			<p style="display: none; color: red" id="render_error"></p>
-			<p><input type="text" id="render_path" placeholder="HTML export path"/><button onclick="renderSession()" id="render_session_button">Export session to HTML</button></p>
-			<script type="text/javascript">
-				async function loadSession(){
-					const errorEle = $("#load_save_error");	
-					errorEle.style.display = 'none';
-
-					const loadButton = $("#load_session_button");
-					const originalLoadText = loadButton.innerText;
-					const saveButton = $("#save_session_button");
-					const originalSaveText = saveButton.innerText;
-					loadButton.disabled = true; loadButton.innerText = "Loading...";
-					saveButton.disabled = true;
-
-					const path = $("#session_path").value;
-					const resp = await fetchJson("/session/load", "POST", {'path': path});
-					if(!isOk(resp)){
-						errorEle.innerText = resp.json.error;
-						errorEle.style.display = 'block';
-					}
-
-					loadButton.disabled = false; loadButton.innerText = originalLoadText;
-					saveButton.disabled = false; saveButton.innerText = originalSaveText;
-
-					if(isOk(resp)){
-						window.location.reload(true);
-					}
-				}
-				async function renderSession(){
-					const errorEle = $("#render_error");	
-					errorEle.style.display = 'none';
-
-					const renderButton = $("#render_session_button");
-					const originalText = renderButton.innerText;
-					renderButton.disabled = true;
-					renderButton.innerText = "Rendering...";
-
-					const path = $("#render_path").value;
-					await fetchJson("/session/render", "PUT", {"path": path});
-
-					renderButton.disabled = false; renderButton.innerText = originalText;
-				}
-				async function saveSession(){
-					const errorEle = $("#load_save_error");	
-					errorEle.style.display = 'none';
-
-					const loadButton = $("#load_session_button");
-					const originalLoadText = loadButton.innerText;
-					const saveButton = $("#save_session_button");
-					const originalSaveText = saveButton.innerText;
-					loadButton.disabled = true;
-					saveButton.disabled = true; saveButton.innerText = "Saving...";
-
-					const path = $("#session_path").value;
-					const save_feature_tensors = $("#save_tensors_checkbox").checked;
-					await fetchJson("/session/save", "POST", {"path": path, 'save_feature_tensors': save_feature_tensors});
-
-					loadButton.disabled = false; loadButton.innerText = originalLoadText;
-					saveButton.disabled = false; saveButton.innerText = originalSaveText;
-				}
-			</script>
-		</div>
-		<br/>
-
-		<script type="text/javascript">
-			function refreshSessionInfo(data){
-				document.title = data['name'] + " | Peek";
-				$("#session_name").innerText = data['name'];
-
-				const description = data['description'];
-
-				if(description == "" || description == null){
-					$("#session_description_placeholder").style.display = 'block';
-					$("#session_description").style.display = 'none';
-				}
-				else {
-					$("#session_description").style.display = 'block';
-					$("#session_description_placeholder").style.display = 'none';
-					$("#session_description").innerText = description;
-				}
-			}
-
-			async function getSessionInfo(){
-				window.sessionInfo.update((await fetchJson('/session')).json);
-			}
-
-			window.sessionInfo.addSub(refreshSessionInfo); getSessionInfo();
-			
-			registerInlineForm(
-				$("#session_name"),
-				$("#rename_session_form"),
-				$("#rename_session_form").querySelector(".name"),
-				$("#session_name"),
-				$("#rename_session_button"),
-				async function(sessionName){
-					const formDict = {"name": sessionName};
-					await fetchJson("/session/rename", "PUT", formDict);
-
-					await getSessionInfo();
-				}
-			);
-
-			registerInlineForm(
-				$("#session_description_wrapper"),
-				$("#edit_session_description_form"),
-				$("#edit_session_description_form").querySelector(".description_input"),
-				$("#session_description"),
-				$("#edit_session_description_button"),
-				async function(sessionDescription){
-					const formDict = {"description": sessionDescription};
-					await fetchJson("/session/rename", "PUT", formDict);
-
-					await getSessionInfo();
-				}
-			);
-		</script>
-	{% endif %}
-
-	<hr/>
-	<div id="session_info_tabs" style="margin-bottom: 1rem;">
-		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('model_info_div');" id="model_info_div_session_info_tab">Model info</span>
-		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('saes_div');" id="saes_div_session_info_tab">Dictionaries</span>
-		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('prompts_div');" id="prompts_div_session_info_tab">Prompts</span>
-		<span class="session_info_tab clickable" onclick="switchSessionInfoTab('feature_lists_div');" id="feature_lists_div_session_info_tab">Feature lists</span>
-	</div>
-	<div id="model_info_div">
-		{% if not static_render %}
-			{% set model_name='' %}
-			{% set model_n_layers='' %}
-			{% set model_n_params='' %}
-			<div id="no_model_loaded_div">
-				<p>No model loaded yet.</p>
-				<p id="load_model_error" style="color: red; display: none"></p>
-				<p><input id="model_load_path" placeholder="Model name" value="gpt2"/> Load model in half-precision: <input id="model_load_half" type="checkbox" checked="false"/> <button onclick="loadModel()" id="load_model_button">Load model</button></p>
-			</div>
-		{% else %}
-			{% set model_name=sess.model_info.name %}
-			{% set model_n_layers=sess.model_info.n_layers %}
-			{% set model_n_params=sess.model_info.n_params %}
-		{% endif %}
-		<div style='{{"display: none;" if not static_render else ""}}' id="loaded_model_info_div">
-			<p><b>Model name:</b> <span id="model_name">{{model_name}}</span></p>
-			<p><b>Number of layers:</b> <span id="model_n_layers">{{model_n_layers}}</span></p>
-			<p><b>Parameter count:</b> <span id="model_n_params">{{model_n_params}}</span></p>
-		</div>
-
-		{% if not static_render %}
-			<script type="text/javascript">
-				async function getModelInfo(){
-					window.modelInfo.update((await fetchJson("/model")).json);
-				}
-
-				async function loadModel(){
-					$('#model_load_path').disabled = true;
-					$("#model_load_half").disabled = true;
-					$('#load_model_button').disabled = true;
-					const originalLoadButtonText = $('#load_model_button').innerText;
-					$('#load_model_button').innerHTML = "Model loading...";
-
-					const model_path = $('#model_load_path').value;
-					const dtype_str = $("#model_load_half").checked ? 'bfloat16' : null;
-					const modelResp = await fetchJson('/model', "POST", {'name': model_path, 'dtype_str': dtype_str});
-
-					$('#model_load_path').disabled = false;
-					$('#load_model_button').disabled = false;
-					$("#model_load_half").disabled = false;
-					$('#load_model_button').innerHTML = originalLoadButtonText;
-
-					const errorEle = $("#load_model_error");
-					if(!isOk(modelResp)){
-						const error = modelResp.json.error;
-						errorEle.style.display = 'block';
-						errorEle.innerText = "Error: " + error
-					}
-					else {
-						errorEle.style.display = 'none';
-						await getModelInfo();
-					}
-				}
-
-				function refreshModelInfoView(data){
-					$('#no_model_loaded_div').style.display = 'none';
-					$('#loaded_model_info_div').style.display = 'block';
-
-					$('#model_name').innerHTML = data['name']
-					$('#model_n_layers').innerHTML = data['n_layers']
-					$('#model_n_params').innerHTML = data['n_params']
-				}
-
-				window.modelInfo.addSub(refreshModelInfoView);
-				getModelInfo();
-			</script>
-		{% endif %}
-	</div>
-
-	<div id="saes_div">
-		{% if not static_render %}
-		<div>
-			<p id="load_sae_error" style="color: red; display: none"></p>
-			<p>Load dictionary (or dictionaries) from local path: <input id="load_sae_path" type="text"/><button onclick="loadSaeFromPath()" id="load_sae_button">Load</button></p>
-			<p>Load dictionaries from HuggingFace repo: <input id="load_saes_hf_repo" type="text" placeholder="Repo name" value="jacobdunefsky/gpt2small-transcoders"/><button onclick="loadSaesFromRepo()" id="load_saes_hf_button">Load</button></p>
-		</div>
-		{% endif %}
-
-		<!-- SAE list -->
-		{% if not static_render %}
-			{{ list_items.sae_list_item() }}
-		{% endif %}
-
-		<div id="saes_list_div" class="list_div" style="border-width: 1px; border-style: solid">
+	<div id="session_info_top_div" style="display: flex; align-items: center; justify-content: space-between; padding-right: 7em;">
+		<div style="width: 75%">
+			<!-- session name -->
 			{% if static_render %}
-				{% for sae_info in sess.sae_list.dict.values() %}
-					{{ list_items.sae_list_item(sae_info) }}
-				{% endfor %}
+				<h1 id="session_name">{{ sess.name }}</h1>
+			{% else %}
+				<h1 id="session_name"></h1>
+				<div id="rename_session_form" style="display: none">
+					<input type="text" style="font-size: 32pt; font-weight: bold;" class="name"/><button id="rename_session_button">Rename session</button>
+				</div>
 			{% endif %}
-		</div>
-		{% if not static_render %}
-			<script type="text/javascript">
-				async function getSaesInfo(){
-					const saesInfo = (await fetchJson('/saes')).json;
-					window.saesInfo.update(saesInfo);
-				}
+			
+			<!-- session description -->
+			{% if static_render %}
+				{% if sess.description != "" and sess.description is not none %} 
+				<div id="session_description" class="description">{{ sess.description }}</div>
+				{% endif %}
+			{% else %}
+				<div id="session_description_wrapper">
+					<div id="session_description_placeholder" style="display: none" class="description_placeholder">
+						Click to add a description
+					</div>
+					<div id="session_description" class="description"></div>
+				</div>
+				<div id="edit_session_description_form" style="display: none">
+					<textarea class="description_input" placeholder="Description" style="flex-grow: 1"></textarea><button id="edit_session_description_button">Submit</button>
+				</div>
+			{% endif %}
 
-				async function loadSaeFromPath(){
-					$('#load_sae_path').disabled = true;
-					$('#load_sae_button').disabled = true;
-					const originalLoadButtonText = $('#load_sae_button').innerText;
-					$('#load_sae_button').innerHTML = "Loading...";
+			<br/>
 
-					const path = $('#load_sae_path').value
-					const saeResp = await fetchJson('/saes', 'POST', {'path': path});
+			<!-- session loading/saving -->
+			{% if not static_render %}
+				<div>
+					<p style="display: none; color: red" id="load_save_error"></p>
+					<p><input type="text" id="session_path" placeholder="Session path"/><button onclick="loadSession()" id="load_session_button">Load session</button><button onclick="saveSession()" id="save_session_button">Save session</button> <label for="save_tensors_checkbox">Save session with tensors: </label><input type="checkbox" checked id="save_tensors_checkbox"/></p>
+					<p style="display: none; color: red" id="render_error"></p>
+					<p><input type="text" id="render_path" placeholder="HTML export path"/><button onclick="renderSession()" id="render_session_button">Export session to HTML</button></p>
+					<script type="text/javascript">
+						async function loadSession(){
+							const errorEle = $("#load_save_error");	
+							errorEle.style.display = 'none';
 
-					$('#load_sae_path').disabled = false;
-					$('#load_sae_button').disabled = false;
-					$('#load_sae_button').innerHTML = originalLoadButtonText;
+							const loadButton = $("#load_session_button");
+							const originalLoadText = loadButton.innerText;
+							const saveButton = $("#save_session_button");
+							const originalSaveText = saveButton.innerText;
+							loadButton.disabled = true; loadButton.innerText = "Loading...";
+							saveButton.disabled = true;
 
-					const errorEle = $("#load_sae_error");
-					if(!isOk(saeResp)){
-						const error = saeResp.json.error;
-						errorEle.style.display = 'block';
-						errorEle.innerText = "Error: " + error
-					}
-					else {
-						errorEle.style.display = 'none';
-						await getSaesInfo();
-					}
-				}
-
-				async function loadSaesFromRepo(){
-					$('#load_saes_hf_repo').disabled = true;
-					$('#load_saes_hf_button').disabled = true;
-					const originalLoadButtonText = $('#load_saes_hf_button').innerText;
-					$('#load_saes_hf_button').innerHTML = "Loading...";
-
-					const repo = $('#load_saes_hf_repo').value
-					const saeResp = await fetchJson('/saes', 'POST', {'hf_repo': repo});
-
-					$('#load_saes_hf_repo').disabled = false;
-					$('#load_saes_hf_button').disabled = false;
-					$('#load_saes_hf_button').innerHTML = originalLoadButtonText;
-
-					const errorEle = $("#load_sae_error");
-					if(!isOk(saeResp)){
-						const error = saeResp.json.error;
-						errorEle.style.display = 'block';
-						errorEle.innerText = "Error: " + error
-					}
-					else {
-						errorEle.style.display = 'none';
-						await getSaesInfo();
-					}
-				}
-
-				async function deleteSae(e){
-					const id = e.closest('.saes_list_item').querySelector(".id").value;
-					await fetchJson('/saes/'+id, "DELETE");
-					await getSaesInfo();
-				}
-
-				function updateSaesListView(saesInfo){
-					const itemTemplate = $('#saes_list_template');
-					const listNode = $('#saes_list_div');
-					if(saesInfo.length == 0){
-						listNode.innerHTML = "No dictionaries have been loaded yet.";
-						return;
-					}
-
-					listNode.innerHTML = '';
-					for(var i = 0; i < saesInfo.length; i++){
-						const curInfo = saesInfo[i];
-
-						var newNode = itemTemplate.cloneNode(true);
-						newNode.removeAttribute("id");
-
-						newNode.querySelector('.id').innerHTML = curInfo['id'];
-						newNode.querySelector('.short_name').innerHTML = curInfo['short_name'];
-						newNode.querySelector('.name').innerHTML = curInfo['name'];
-						newNode.querySelector('.input_layer').innerHTML = curInfo['input_layer'].layer;
-						newNode.querySelector('.input_sublayer').innerHTML = curInfo['input_layer'].sublayer;
-						newNode.querySelector('.output_layer').innerHTML = curInfo['output_layer'].layer;
-						newNode.querySelector('.output_sublayer').innerHTML = curInfo['output_layer'].sublayer;
-						newNode.querySelector('.num_features').innerHTML = curInfo['num_features'];
-						
-						if(curInfo['upstreams'].length > 0){
-							const upstream_type = curInfo['upstreams'][0].path_type;
-							if(upstream_type == "huggingface"){
-								newNode.querySelector('.upstream_type').innerHTML = "Huggingface repo";
-								newNode.querySelector(".upstream_hf_repo").innerText = " in repo " + curInfo['upstreams'][0]['hf_repo_id'];
-								newNode.querySelector(".upstream_path").innerText = curInfo['upstreams'][0]['hf_path'];
+							const path = $("#session_path").value;
+							const resp = await fetchJson("/session/load", "POST", {'path': path});
+							if(!isOk(resp)){
+								errorEle.innerText = resp.json.error;
+								errorEle.style.display = 'block';
 							}
-							else if(upstream_type == "absolute_path" || upstream_type == "relative_path"){
-								newNode.querySelector('.upstream_type').innerHTML = "Local path";
-								newNode.querySelector(".upstream_path").innerText = curInfo['upstreams'][0][upstream_type];
+
+							loadButton.disabled = false; loadButton.innerText = originalLoadText;
+							saveButton.disabled = false; saveButton.innerText = originalSaveText;
+
+							if(isOk(resp)){
+								window.location.reload(true);
 							}
 						}
+						async function renderSession(){
+							const errorEle = $("#render_error");	
+							errorEle.style.display = 'none';
 
-						newNode.style.display = 'block';
-						listNode.appendChild(newNode);
+							const renderButton = $("#render_session_button");
+							const originalText = renderButton.innerText;
+							renderButton.disabled = true;
+							renderButton.innerText = "Rendering...";
+
+							const path = $("#render_path").value;
+							await fetchJson("/session/render", "PUT", {"path": path});
+
+							renderButton.disabled = false; renderButton.innerText = originalText;
+						}
+						async function saveSession(){
+							const errorEle = $("#load_save_error");	
+							errorEle.style.display = 'none';
+
+							const loadButton = $("#load_session_button");
+							const originalLoadText = loadButton.innerText;
+							const saveButton = $("#save_session_button");
+							const originalSaveText = saveButton.innerText;
+							loadButton.disabled = true;
+							saveButton.disabled = true; saveButton.innerText = "Saving...";
+
+							const path = $("#session_path").value;
+							const save_feature_tensors = $("#save_tensors_checkbox").checked;
+							await fetchJson("/session/save", "POST", {"path": path, 'save_feature_tensors': save_feature_tensors});
+
+							loadButton.disabled = false; loadButton.innerText = originalLoadText;
+							saveButton.disabled = false; saveButton.innerText = originalSaveText;
+						}
+					</script>
+				</div>
+				<br/>
+
+				<script type="text/javascript">
+					function refreshSessionInfo(data){
+						document.title = data['name'] + " | Peek";
+						$("#session_name").innerText = data['name'];
+
+						const description = data['description'];
+
+						if(description == "" || description == null){
+							$("#session_description_placeholder").style.display = 'block';
+							$("#session_description").style.display = 'none';
+						}
+						else {
+							$("#session_description").style.display = 'block';
+							$("#session_description_placeholder").style.display = 'none';
+							$("#session_description").innerText = description;
+						}
 					}
-				}
 
-				window.saesInfo.addSub(updateSaesListView);
-				getSaesInfo();
-			</script>
-		{% endif %}
+					async function getSessionInfo(){
+						window.sessionInfo.update((await fetchJson('/session')).json);
+					}
+
+					window.sessionInfo.addSub(refreshSessionInfo); getSessionInfo();
+					
+					registerInlineForm(
+						$("#session_name"),
+						$("#rename_session_form"),
+						$("#rename_session_form").querySelector(".name"),
+						$("#session_name"),
+						$("#rename_session_button"),
+						async function(sessionName){
+							const formDict = {"name": sessionName};
+							await fetchJson("/session/rename", "PUT", formDict);
+
+							await getSessionInfo();
+						}
+					);
+
+					registerInlineForm(
+						$("#session_description_wrapper"),
+						$("#edit_session_description_form"),
+						$("#edit_session_description_form").querySelector(".description_input"),
+						$("#session_description"),
+						$("#edit_session_description_button"),
+						async function(sessionDescription){
+							const formDict = {"description": sessionDescription};
+							await fetchJson("/session/rename", "PUT", formDict);
+
+							await getSessionInfo();
+						}
+					);
+				</script>
+			{% endif %}
+		</div>
+		<div id="model_info_div" class="small_div" style="padding: 1rem">
+			{% if not static_render %}
+				{% set model_name='' %}
+				{% set model_n_layers='' %}
+				{% set model_n_params='' %}
+				<div id="no_model_loaded_div">
+					<p>No model loaded yet.</p>
+					<p id="load_model_error" style="color: red; display: none"></p>
+					<p><input id="model_load_path" placeholder="Model name" value="gpt2"/> Load model in half-precision: <input id="model_load_half" type="checkbox" checked="false"/> <button onclick="loadModel()" id="load_model_button">Load model</button></p>
+				</div>
+			{% else %}
+				{% set model_name=sess.model_info.name %}
+				{% set model_n_layers=sess.model_info.n_layers %}
+				{% set model_n_params=sess.model_info.n_params %}
+			{% endif %}
+			<div style='{{"display: none;" if not static_render else ""}}' id="loaded_model_info_div">
+				<h3 style="margin-top: 0; margin-bottom: 0;">Model info</h3>
+				<p><b>Model name:</b> <span id="model_name">{{model_name}}</span></p>
+				<p><b>Number of layers:</b> <span id="model_n_layers">{{model_n_layers}}</span></p>
+				<p><b>Parameter count:</b> <span id="model_n_params">{{model_n_params}}</span></p>
+			</div>
+
+			{% if not static_render %}
+				<script type="text/javascript">
+					async function getModelInfo(){
+						window.modelInfo.update((await fetchJson("/model")).json);
+					}
+
+					async function loadModel(){
+						$('#model_load_path').disabled = true;
+						$("#model_load_half").disabled = true;
+						$('#load_model_button').disabled = true;
+						const originalLoadButtonText = $('#load_model_button').innerText;
+						$('#load_model_button').innerHTML = "Model loading...";
+
+						const model_path = $('#model_load_path').value;
+						const dtype_str = $("#model_load_half").checked ? 'bfloat16' : null;
+						const modelResp = await fetchJson('/model', "POST", {'name': model_path, 'dtype_str': dtype_str});
+
+						$('#model_load_path').disabled = false;
+						$('#load_model_button').disabled = false;
+						$("#model_load_half").disabled = false;
+						$('#load_model_button').innerHTML = originalLoadButtonText;
+
+						const errorEle = $("#load_model_error");
+						if(!isOk(modelResp)){
+							const error = modelResp.json.error;
+							errorEle.style.display = 'block';
+							errorEle.innerText = "Error: " + error
+						}
+						else {
+							errorEle.style.display = 'none';
+							await getModelInfo();
+						}
+					}
+
+					function refreshModelInfoView(data){
+						$('#no_model_loaded_div').style.display = 'none';
+						$('#loaded_model_info_div').style.display = 'block';
+
+						$('#model_name').innerHTML = data['name']
+						$('#model_n_layers').innerHTML = data['n_layers']
+						$('#model_n_params').innerHTML = data['n_params']
+					}
+
+					window.modelInfo.addSub(refreshModelInfoView);
+					getModelInfo();
+				</script>
+			{% endif %}
+		</div>
+	</div>
+		<hr/>
+		<div id="session_info_tabs" style="margin-bottom: 1rem;">
+			<span class="session_info_tab clickable" onclick="switchSessionInfoTab('saes_div');" id="saes_div_session_info_tab">Dictionaries</span>
+			<span class="session_info_tab clickable" onclick="switchSessionInfoTab('prompts_div');" id="prompts_div_session_info_tab">Prompts</span>
+			<span class="session_info_tab clickable" onclick="switchSessionInfoTab('feature_lists_div');" id="feature_lists_div_session_info_tab">Feature lists</span>
+		</div>
+		
+		<div id="saes_div">
+			{% if not static_render %}
+			<div>
+				<p id="load_sae_error" style="color: red; display: none"></p>
+				<p>Load dictionary (or dictionaries) from local path: <input id="load_sae_path" type="text"/><button onclick="loadSaeFromPath()" id="load_sae_button">Load</button></p>
+				<p>Load dictionaries from HuggingFace repo: <input id="load_saes_hf_repo" type="text" placeholder="Repo name" value="jacobdunefsky/gpt2small-transcoders"/><button onclick="loadSaesFromRepo()" id="load_saes_hf_button">Load</button></p>
+			</div>
+			{% endif %}
+
+			<!-- SAE list -->
+			{% if not static_render %}
+				{{ list_items.sae_list_item() }}
+			{% endif %}
+
+			<div id="saes_list_div" class="list_div" style="border-width: 1px; border-style: solid">
+				{% if static_render %}
+					{% for sae_info in sess.sae_list.dict.values() %}
+						{{ list_items.sae_list_item(sae_info) }}
+					{% endfor %}
+				{% endif %}
+			</div>
+			{% if not static_render %}
+				<script type="text/javascript">
+					async function getSaesInfo(){
+						const saesInfo = (await fetchJson('/saes')).json;
+						window.saesInfo.update(saesInfo);
+					}
+
+					async function loadSaeFromPath(){
+						$('#load_sae_path').disabled = true;
+						$('#load_sae_button').disabled = true;
+						const originalLoadButtonText = $('#load_sae_button').innerText;
+						$('#load_sae_button').innerHTML = "Loading...";
+
+						const path = $('#load_sae_path').value
+						const saeResp = await fetchJson('/saes', 'POST', {'path': path});
+
+						$('#load_sae_path').disabled = false;
+						$('#load_sae_button').disabled = false;
+						$('#load_sae_button').innerHTML = originalLoadButtonText;
+
+						const errorEle = $("#load_sae_error");
+						if(!isOk(saeResp)){
+							const error = saeResp.json.error;
+							errorEle.style.display = 'block';
+							errorEle.innerText = "Error: " + error
+						}
+						else {
+							errorEle.style.display = 'none';
+							await getSaesInfo();
+						}
+					}
+
+					async function loadSaesFromRepo(){
+						$('#load_saes_hf_repo').disabled = true;
+						$('#load_saes_hf_button').disabled = true;
+						const originalLoadButtonText = $('#load_saes_hf_button').innerText;
+						$('#load_saes_hf_button').innerHTML = "Loading...";
+
+						const repo = $('#load_saes_hf_repo').value
+						const saeResp = await fetchJson('/saes', 'POST', {'hf_repo': repo});
+
+						$('#load_saes_hf_repo').disabled = false;
+						$('#load_saes_hf_button').disabled = false;
+						$('#load_saes_hf_button').innerHTML = originalLoadButtonText;
+
+						const errorEle = $("#load_sae_error");
+						if(!isOk(saeResp)){
+							const error = saeResp.json.error;
+							errorEle.style.display = 'block';
+							errorEle.innerText = "Error: " + error
+						}
+						else {
+							errorEle.style.display = 'none';
+							await getSaesInfo();
+						}
+					}
+
+					async function deleteSae(e){
+						const id = e.closest('.saes_list_item').querySelector(".id").value;
+						await fetchJson('/saes/'+id, "DELETE");
+						await getSaesInfo();
+					}
+
+					function updateSaesListView(saesInfo){
+						const itemTemplate = $('#saes_list_template');
+						const listNode = $('#saes_list_div');
+						if(saesInfo.length == 0){
+							listNode.innerHTML = "No dictionaries have been loaded yet.";
+							return;
+						}
+
+						listNode.innerHTML = '';
+						for(var i = 0; i < saesInfo.length; i++){
+							const curInfo = saesInfo[i];
+
+							var newNode = itemTemplate.cloneNode(true);
+							newNode.removeAttribute("id");
+
+							newNode.querySelector('.id').innerHTML = curInfo['id'];
+							newNode.querySelector('.short_name').innerHTML = curInfo['short_name'];
+							newNode.querySelector('.name').innerHTML = curInfo['name'];
+							newNode.querySelector('.input_layer').innerHTML = curInfo['input_layer'].layer;
+							newNode.querySelector('.input_sublayer').innerHTML = curInfo['input_layer'].sublayer;
+							newNode.querySelector('.output_layer').innerHTML = curInfo['output_layer'].layer;
+							newNode.querySelector('.output_sublayer').innerHTML = curInfo['output_layer'].sublayer;
+							newNode.querySelector('.num_features').innerHTML = curInfo['num_features'];
+							
+							if(curInfo['upstreams'].length > 0){
+								const upstream_type = curInfo['upstreams'][0].path_type;
+								if(upstream_type == "huggingface"){
+									newNode.querySelector('.upstream_type').innerHTML = "Huggingface repo";
+									newNode.querySelector(".upstream_hf_repo").innerText = " in repo " + curInfo['upstreams'][0]['hf_repo_id'];
+									newNode.querySelector(".upstream_path").innerText = curInfo['upstreams'][0]['hf_path'];
+								}
+								else if(upstream_type == "absolute_path" || upstream_type == "relative_path"){
+									newNode.querySelector('.upstream_type').innerHTML = "Local path";
+									newNode.querySelector(".upstream_path").innerText = curInfo['upstreams'][0][upstream_type];
+								}
+							}
+
+							newNode.style.display = 'block';
+							listNode.appendChild(newNode);
+						}
+					}
+
+					window.saesInfo.addSub(updateSaesListView);
+					getSaesInfo();
+				</script>
+			{% endif %}
 	</div>
 
 	<div id="prompts_div">
@@ -456,8 +459,8 @@
 
 				window.allPromptsInfo.addSub(refreshPromptsList);
 			</script>
-			<div id="add_new_prompt_form" class="small_div">
-				<p>Add a new prompt</p>
+			<div id="add_new_prompt_form" class="small_div"><details style="display: flex">
+				<summary><b>Add a new prompt</b></summary>
 				<p>Name: <input type="text" class="name" placeholder="Name"/></p>
 				<p>Description: <textarea class="description_input" placeholder="Description"></textarea></p>
 				<p><button onclick="addNewPrompt()">Add</button>
@@ -478,7 +481,7 @@
 						window.allPromptsInfo.update((await fetchJson("/prompts")).json);
 					}
 				</script>
-			</div>
+			</details></div>
 		{% endif %}
 	</div>
 
@@ -615,7 +618,7 @@
 	</div>
 
 	<script type="text/javascript">
-		const allSessionInfoTabIds = ["model_info_div", "saes_div", "prompts_div", "feature_lists_div"];
+		const allSessionInfoTabIds = [/*"model_info_div",*/"saes_div", "prompts_div", "feature_lists_div"];
 		function switchSessionInfoTab(newTabId){
 			for(const curTabId of allSessionInfoTabIds){
 				const ele = $("#" + curTabId);
@@ -633,7 +636,7 @@
 			}
 		}
 		
-		switchSessionInfoTab("model_info_div");
+		switchSessionInfoTab("saes_div");
 	</script>
 </div>
 

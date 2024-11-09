@@ -129,7 +129,7 @@
 	<!-- header -->
 	<div id="header" class="header" style="position: sticky; top: 0; box-shadow: 0px 2px 2px gray; padding-top: 2px; padding-bottom: 2px;">
 		<div style="flex: 1; display: flex; align-items: center; gap: inherit">
-			<p style="font-size: 30pt">Peek</a>
+			<p style="font-size: 30pt">Peek</p>
 		</div>
 		<div id="header_right_column" style="flex: 2; align-items: center; justify-content: right; gap: inherit; display: none">
 			<a class="clickable" href="#session_info_div">Session info</a>
@@ -235,10 +235,10 @@
 			<div style="flex: 1; margin-right: 0.5rem;">
 				<p>
 					Select prompt:
-					<select id="select_prompt">
+					<select id="select_prompt" onchange="selectCurPrompt()">
 
 					</select>
-					<button onclick="selectCurPrompt()">Load</button>
+					<!--<button onclick="selectCurPrompt()">Load</button>-->
 					<script type="text/javascript">
 						async function getAllPrompts() {
 							window.allPromptsInfo.update((await fetchJson("/prompts")).json);
@@ -717,295 +717,297 @@
 					}
 				</script>
 
-				<p>Feature list for prompt: <select id="prompt_feature_list_select"></select> <button onclick="changeCurFeatureListForPrompt()">Set</button></p>
-				<script>
-					// Whenever we load a new prompt/new feature list,
-					// we want to update the current index of the prompt feature list
-					window.curPromptFeatureListInfo.addSub(function(listInfo){
-						const allFeatureLists = window.allFeatureListsInfo.data;
-						for(var i = 0; i < allFeatureLists.length; i++){
-							if(allFeatureLists[i].id == listInfo.id){
-								$("#prompt_feature_list_select").selectedIndex = i;
-								break;
+				<div class="small_div"> <!-- feature list div -->
+					<p>Feature list for prompt: <select id="prompt_feature_list_select"></select> <button onclick="changeCurFeatureListForPrompt()">Set</button></p>
+					<script>
+						// Whenever we load a new prompt/new feature list,
+						// we want to update the current index of the prompt feature list
+						window.curPromptFeatureListInfo.addSub(function(listInfo){
+							const allFeatureLists = window.allFeatureListsInfo.data;
+							for(var i = 0; i < allFeatureLists.length; i++){
+								if(allFeatureLists[i].id == listInfo.id){
+									$("#prompt_feature_list_select").selectedIndex = i;
+									break;
+								}
+							}
+						});
+
+
+						/* feature renaming functions */
+						
+						function showRenameFeatureForm(ele){
+							const formEle = ele.closest(".prompt_feature_list_item").querySelector(".rename_form");
+							clearForm(formEle);
+							formEle.style.display = "block";
+						}
+						async function renameFeature(ele){
+							const parentEle = ele.closest(".prompt_feature_list_item");
+							const idx = parentEle.querySelector(".id").value;
+							const formEle = parentEle.querySelector(".rename_form");
+							const name = formEle.querySelector(".name").value;
+
+							await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features/" + idx, "PUT", {"name": name});
+
+							clearForm(formEle);
+							formEle.style.display = "none";
+
+							await getCurPromptFeatureListInfo();
+						}
+						function showEditFeatureDescriptionForm(ele){
+							const formEle = ele.closest(".prompt_feature_list_item").querySelector(".edit_description_form");
+							clearForm(formEle);
+							formEle.style.display = "block";
+						}
+						async function editFeatureDescription(ele){
+							const parentEle = ele.closest(".prompt_feature_list_item");
+							const idx = parentEle.querySelector(".id").value;
+							const formEle = parentEle.querySelector(".edit_description_form");
+							const description = formEle.querySelector(".description_input").value;
+
+							await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features/" + idx, "PUT", {"description": description});
+
+							clearForm(formEle);
+							formEle.style.display = "none";
+
+							getCurPromptFeatureListInfo();
+						}
+
+						/* end feature renaming functions */
+
+						async function changeCurFeatureListForPrompt(){
+							const newFeatureListIdx = parseInt($('#prompt_feature_list_select').value, 10);
+							const curPromptIdx = window.curPromptIdx.data;
+							await fetchJson("/prompts/" + curPromptIdx + "/feature_list", "PUT", 
+								{
+									"feature_list_idx": newFeatureListIdx
+								}
+							);
+							// update prompt info because we updated its cur feature list idx
+							// TODO: do this client-side to avoid an extra request
+							await getCurPromptInfo();
+							await getCurPromptFeatureListInfo(newFeatureListIdx);
+						}
+
+						function refreshFeatureListSelect(select, data){
+							select.innerHTML = '';
+							for(var i = 0; i < data.length; i++){
+								const option = document.createElement("option");
+								const cur_info = data[i];
+								option.value = cur_info['id'];
+								option.innerText = cur_info['name'];
+								select.appendChild(option);
 							}
 						}
-					});
 
+						async function getAllFeatureListsInfo(){
+							window.allFeatureListsInfo.update((await fetchJson("/feature_lists")).json);
+						}
 
-					/* feature renaming functions */
-					
-					function showRenameFeatureForm(ele){
-						const formEle = ele.closest(".prompt_feature_list_item").querySelector(".rename_form");
-						clearForm(formEle);
-						formEle.style.display = "block";
-					}
-					async function renameFeature(ele){
-						const parentEle = ele.closest(".prompt_feature_list_item");
-						const idx = parentEle.querySelector(".id").value;
-						const formEle = parentEle.querySelector(".rename_form");
-						const name = formEle.querySelector(".name").value;
-
-						await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features/" + idx, "PUT", {"name": name});
-
-						clearForm(formEle);
-						formEle.style.display = "none";
-
-						await getCurPromptFeatureListInfo();
-					}
-					function showEditFeatureDescriptionForm(ele){
-						const formEle = ele.closest(".prompt_feature_list_item").querySelector(".edit_description_form");
-						clearForm(formEle);
-						formEle.style.display = "block";
-					}
-					async function editFeatureDescription(ele){
-						const parentEle = ele.closest(".prompt_feature_list_item");
-						const idx = parentEle.querySelector(".id").value;
-						const formEle = parentEle.querySelector(".edit_description_form");
-						const description = formEle.querySelector(".description_input").value;
-
-						await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features/" + idx, "PUT", {"description": description});
-
-						clearForm(formEle);
-						formEle.style.display = "none";
-
-						getCurPromptFeatureListInfo();
-					}
-
-					/* end feature renaming functions */
-
-					async function changeCurFeatureListForPrompt(){
-						const newFeatureListIdx = parseInt($('#prompt_feature_list_select').value, 10);
-						const curPromptIdx = window.curPromptIdx.data;
-						await fetchJson("/prompts/" + curPromptIdx + "/feature_list", "PUT", 
-							{
-								"feature_list_idx": newFeatureListIdx
+						window.allFeatureListsInfo.addSub(
+							function (data) {
+								refreshFeatureListSelect(
+									$('#prompt_feature_list_select'), data
+								);
 							}
 						);
-						// update prompt info because we updated its cur feature list idx
-						// TODO: do this client-side to avoid an extra request
-						await getCurPromptInfo();
-						await getCurPromptFeatureListInfo(newFeatureListIdx);
-					}
+						
+						getAllFeatureListsInfo();
 
-					function refreshFeatureListSelect(select, data){
-						select.innerHTML = '';
-						for(var i = 0; i < data.length; i++){
-							const option = document.createElement("option");
-							const cur_info = data[i];
-							option.value = cur_info['id'];
-							option.innerText = cur_info['name'];
-							select.appendChild(option);
-						}
-					}
-
-					async function getAllFeatureListsInfo(){
-						window.allFeatureListsInfo.update((await fetchJson("/feature_lists")).json);
-					}
-
-					window.allFeatureListsInfo.addSub(
-						function (data) {
-							refreshFeatureListSelect(
-								$('#prompt_feature_list_select'), data
-							);
-						}
-					);
-					
-					getAllFeatureListsInfo();
-
-					window.curPromptFeatureListInfo.addSub(refreshPromptFeatureList);
-				</script>
-				{{ list_items.prompt_feature_list_item() }}
-				
-				<div id="prompt_feature_list" style="flex: 1" class="list_div"></div>
-				<div id="add_feature_div" class="small_div"><details>
-					<script type="text/javascript">
-						function updateSaesDropdowns(data){
-							// const sae_select = $("#add_sae_feature_div").querySelector(".sae_select");
-							const sae_selects = document.querySelectorAll(".sae_select");
-							for(const sae_select of sae_selects){
-								sae_select.innerHTML = '';
-							}
-							for(var i = 0; i < data.length; i++){
-								const sae_info = data[i];
-								const option = document.createElement("option");
-								option.value = sae_info['id'];
-								option.innerText = sae_info['short_name'];
-								for(const sae_select of sae_selects){
-									sae_select.appendChild(option.cloneNode(true));
-								}
-							}
-						}
-						window.saesInfo.addSub(updateSaesDropdowns);
-
-						function show_sae_or_observable_form(){
-							const add_feature_type_select = $('#add_feature_type_select');
-							const value = add_feature_type_select.value;
-							if(value == "sae"){
-								$('#add_sae_feature_div').style.display = 'block';
-								$('#add_observable_feature_div').style.display = 'none';
-							}
-							else if(value == "observable"){
-								$('#add_observable_feature_div').style.display = 'block';
-								$('#add_sae_feature_div').style.display = 'none';
-								if($("#add_observable_tokens").querySelectorAll(".add_observable_token").length == 0){
-									add_observable_token();
-								}
-							}
-							else {
-								$('#add_sae_feature_div').style.display = 'none';
-								$('#add_observable_feature_div').style.display = 'none';
-							}
-							
-							if(add_feature_type_select.selectedIndex > 0){
-								$("#add_feature_button").style.display = "inline";
-							}
-							else {
-								$("#add_feature_button").style.display = "none";
-							}
-						}
-
-						function add_observable_token(){
-							const listNode = $('#add_observable_tokens');
-							const itemNode = $("#add_observable_token_template");
-
-							const newItem = itemNode.cloneNode(true);
-							newItem.querySelector(".add_observable_token_input").value = "";
-							newItem.querySelector(".add_observable_token_weight").value = "";
-							newItem.removeAttribute("id");
-							newItem.style.display = "block";
-
-							listNode.appendChild(newItem);
-						}
-
-						function deleteObservableToken(ele){
-							const itemNode = ele.closest(".add_observable_token");
-							itemNode.parentNode.removeChild(itemNode);
-						}
-
-						function resetAddFeatureForm(){
-							$("#add_sae_feature_div").style.display = "none";
-							$("#add_observable_feature_div").style.display = "none";
-							$("#add_observable_tokens").innerHTML = "";
-							$("#add_sae_feature_div").querySelector(".sae_feature_idx").value = '';
-							$("#add_feature_type_select").value = "";
-							$("#add_feature_type_select").selectedIndex = 0;
-							$("#add_feature_div").querySelector(".feature_name").value = "";
-							$("#add_feature_div").querySelector(".feature_description").value = "";
-							$("#add_feature_button").style.display = "none";
-						}
-
-						async function addFeature(){
-							const errorMsg = $("#add_feature_error");
-							errorMsg.style.display = "none";
-
-							retdict = {}
-							const add_feature_div = $('#add_feature_div');
-							const addFeatureSelect = add_feature_div.querySelector("#add_feature_type_select");
-
-							retdict["feature_type"] = addFeatureSelect.value;
-							retdict["name"] = add_feature_div.querySelector(".feature_name").value;
-							retdict["description"] = add_feature_div.querySelector(".feature_description").value;
-
-							if(retdict["feature_type"] == "sae"){
-								// SAE-related stuff
-								const saeIdx = parseInt(add_feature_div.querySelector(".sae_select").value, 10);
-								retdict["sae_idx"] = saeIdx;
-								const featureIdx = parseInt(add_feature_div.querySelector(".sae_feature_idx").value, 10);
-								if(isNaN(featureIdx) || featureIdx < 0 || featureIdx > window.saesInfo.data[add_feature_div.querySelector(".sae_select").selectedIndex]['num_features']){
-									errorMsg.style.display = 'block';
-									errorMsg.innerText = 'Error: invalid dictionary feature index.';
-									return;
-								}
-
-								retdict["sae_feature_idx"] = featureIdx;
-							}
-							else if(retdict["feature_type"] == "observable"){
-								const observableTokensDiv = $("#add_observable_tokens");
-								const observableInputs = observableTokensDiv.querySelectorAll(".add_observable_token");
-								var obs_tokens = [];
-								var obs_weights = [];
-								for(const cur_input of observableInputs){
-									const obsToken = cur_input.querySelector(".add_observable_token_input").value;
-									obs_tokens.push(obsToken);
-									const obsWeightStr = cur_input.querySelector(".add_observable_token_weight").value;
-									const obsWeight = parseFloat(obsWeightStr);
-									if(isNaN(obsWeight)){
-										errorMsg.style.display = "block";
-										errorMsg.innerText = "Error: \"" + obsWeightStr + "\" is an invalid weight for token \"" + obsToken + "\".";
-										return;
-									}
-									obs_weights.push(obsWeight);
-								}
-
-								retdict['observable_tokens'] = obs_tokens;
-								retdict['observable_weights'] = obs_weights;
-								retdict['do_unembed_pullback'] = true;
-							}
-
-							resetAddFeatureForm();
-							const resp = await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features", "POST", retdict);
-							if(!isOk(resp)){
-								errorMsg.style.display = "block";
-								errorMsg.innerText = resp.json.error;
-								return;
-							}
-							await getCurPromptFeatureListInfo();
-							await getAllFeatureListsInfo();
-						}
+						window.curPromptFeatureListInfo.addSub(refreshPromptFeatureList);
 					</script>
-					<summary><b>Add a feature</b></summary>
-					<p id="add_feature_error" style="color: red; display: none"></p>
-					<p>Name: <input type="text" class="feature_name"/></p>
-					<p>Description: <input type="textarea" class="feature_description"/></p>
-					<p>Feature type:
-						<select id="add_feature_type_select" onchange="show_sae_or_observable_form()">
-							<option value="">---</option>
-							<option value="sae">Dictionary feature</option>
-							<option value="observable">Observable (measurement on logits)</option>
-						</select>
-					</p>
-					<div id="add_sae_feature_div" style="display: none">
-						<p id="add_sae_feature_placeholder">No dictionaries have been loaded yet. Load a dictionary first before adding a feature from one.</p>
-						<div id="add_sae_feature_wrapper" style="display: none">
-							<p>Dictionary to add feature from:
-								<select class="sae_select">
-								</select>
-							</p>
-							<p>Feature index: <input type="number" class="sae_feature_idx"/></p>
-						</div>
+					{{ list_items.prompt_feature_list_item() }}
+					
+					<div id="prompt_feature_list" style="flex: 1" class="list_div"></div>
+					<div id="add_feature_div" class="small_div"><details>
 						<script type="text/javascript">
-							window.saesInfo.addSub(function(saesInfo){
-								if(saesInfo.length == 0){
-									$("#add_sae_feature_placeholder").style.display = 'block';
-									$("#add_sae_feature_wrapper").style.display = 'none';
+							function updateSaesDropdowns(data){
+								// const sae_select = $("#add_sae_feature_div").querySelector(".sae_select");
+								const sae_selects = document.querySelectorAll(".sae_select");
+								for(const sae_select of sae_selects){
+									sae_select.innerHTML = '';
+								}
+								for(var i = 0; i < data.length; i++){
+									const sae_info = data[i];
+									const option = document.createElement("option");
+									option.value = sae_info['id'];
+									option.innerText = sae_info['short_name'];
+									for(const sae_select of sae_selects){
+										sae_select.appendChild(option.cloneNode(true));
+									}
+								}
+							}
+							window.saesInfo.addSub(updateSaesDropdowns);
+
+							function show_sae_or_observable_form(){
+								const add_feature_type_select = $('#add_feature_type_select');
+								const value = add_feature_type_select.value;
+								if(value == "sae"){
+									$('#add_sae_feature_div').style.display = 'block';
+									$('#add_observable_feature_div').style.display = 'none';
+								}
+								else if(value == "observable"){
+									$('#add_observable_feature_div').style.display = 'block';
+									$('#add_sae_feature_div').style.display = 'none';
+									if($("#add_observable_tokens").querySelectorAll(".add_observable_token").length == 0){
+										add_observable_token();
+									}
 								}
 								else {
-									$("#add_sae_feature_wrapper").style.display = 'block';
-									$("#add_sae_feature_placeholder").style.display = 'none';
+									$('#add_sae_feature_div').style.display = 'none';
+									$('#add_observable_feature_div').style.display = 'none';
 								}
-							});
+								
+								if(add_feature_type_select.selectedIndex > 0){
+									$("#add_feature_button").style.display = "inline";
+								}
+								else {
+									$("#add_feature_button").style.display = "none";
+								}
+							}
+
+							function add_observable_token(){
+								const listNode = $('#add_observable_tokens');
+								const itemNode = $("#add_observable_token_template");
+
+								const newItem = itemNode.cloneNode(true);
+								newItem.querySelector(".add_observable_token_input").value = "";
+								newItem.querySelector(".add_observable_token_weight").value = "";
+								newItem.removeAttribute("id");
+								newItem.style.display = "block";
+
+								listNode.appendChild(newItem);
+							}
+
+							function deleteObservableToken(ele){
+								const itemNode = ele.closest(".add_observable_token");
+								itemNode.parentNode.removeChild(itemNode);
+							}
+
+							function resetAddFeatureForm(){
+								$("#add_sae_feature_div").style.display = "none";
+								$("#add_observable_feature_div").style.display = "none";
+								$("#add_observable_tokens").innerHTML = "";
+								$("#add_sae_feature_div").querySelector(".sae_feature_idx").value = '';
+								$("#add_feature_type_select").value = "";
+								$("#add_feature_type_select").selectedIndex = 0;
+								$("#add_feature_div").querySelector(".feature_name").value = "";
+								$("#add_feature_div").querySelector(".feature_description").value = "";
+								$("#add_feature_button").style.display = "none";
+							}
+
+							async function addFeature(){
+								const errorMsg = $("#add_feature_error");
+								errorMsg.style.display = "none";
+
+								retdict = {}
+								const add_feature_div = $('#add_feature_div');
+								const addFeatureSelect = add_feature_div.querySelector("#add_feature_type_select");
+
+								retdict["feature_type"] = addFeatureSelect.value;
+								retdict["name"] = add_feature_div.querySelector(".feature_name").value;
+								retdict["description"] = add_feature_div.querySelector(".feature_description").value;
+
+								if(retdict["feature_type"] == "sae"){
+									// SAE-related stuff
+									const saeIdx = parseInt(add_feature_div.querySelector(".sae_select").value, 10);
+									retdict["sae_idx"] = saeIdx;
+									const featureIdx = parseInt(add_feature_div.querySelector(".sae_feature_idx").value, 10);
+									if(isNaN(featureIdx) || featureIdx < 0 || featureIdx > window.saesInfo.data[add_feature_div.querySelector(".sae_select").selectedIndex]['num_features']){
+										errorMsg.style.display = 'block';
+										errorMsg.innerText = 'Error: invalid dictionary feature index.';
+										return;
+									}
+
+									retdict["sae_feature_idx"] = featureIdx;
+								}
+								else if(retdict["feature_type"] == "observable"){
+									const observableTokensDiv = $("#add_observable_tokens");
+									const observableInputs = observableTokensDiv.querySelectorAll(".add_observable_token");
+									var obs_tokens = [];
+									var obs_weights = [];
+									for(const cur_input of observableInputs){
+										const obsToken = cur_input.querySelector(".add_observable_token_input").value;
+										obs_tokens.push(obsToken);
+										const obsWeightStr = cur_input.querySelector(".add_observable_token_weight").value;
+										const obsWeight = parseFloat(obsWeightStr);
+										if(isNaN(obsWeight)){
+											errorMsg.style.display = "block";
+											errorMsg.innerText = "Error: \"" + obsWeightStr + "\" is an invalid weight for token \"" + obsToken + "\".";
+											return;
+										}
+										obs_weights.push(obsWeight);
+									}
+
+									retdict['observable_tokens'] = obs_tokens;
+									retdict['observable_weights'] = obs_weights;
+									retdict['do_unembed_pullback'] = true;
+								}
+
+								resetAddFeatureForm();
+								const resp = await fetchJson("/feature_lists/" + window.curPromptFeatureListInfo.data['id'] + "/features", "POST", retdict);
+								if(!isOk(resp)){
+									errorMsg.style.display = "block";
+									errorMsg.innerText = resp.json.error;
+									return;
+								}
+								await getCurPromptFeatureListInfo();
+								await getAllFeatureListsInfo();
+							}
 						</script>
-					</div>
-					<div id="add_observable_feature_div" style="display: none"> 
-						<p id="add_observable_token_template" class="add_observable_token" style="display: none">
-							Token:
-							<input type="text" class="add_observable_token_input"/>
-							 Weight:
-							<input type="text" class="add_observable_token_weight"/>
-							<button onclick="deleteObservableToken(this)">&#10006;</button>
+						<summary><b>Add a feature</b></summary>
+						<p id="add_feature_error" style="color: red; display: none"></p>
+						<p>Name: <input type="text" class="feature_name"/></p>
+						<p>Description: <input type="textarea" class="feature_description"/></p>
+						<p>Feature type:
+							<select id="add_feature_type_select" onchange="show_sae_or_observable_form()">
+								<option value="">---</option>
+								<option value="sae">Dictionary feature</option>
+								<option value="observable">Observable (measurement on logits)</option>
+							</select>
 						</p>
-						<div id="add_observable_tokens">
-							
+						<div id="add_sae_feature_div" style="display: none">
+							<p id="add_sae_feature_placeholder">No dictionaries have been loaded yet. Load a dictionary first before adding a feature from one.</p>
+							<div id="add_sae_feature_wrapper" style="display: none">
+								<p>Dictionary to add feature from:
+									<select class="sae_select">
+									</select>
+								</p>
+								<p>Feature index: <input type="number" class="sae_feature_idx"/></p>
+							</div>
+							<script type="text/javascript">
+								window.saesInfo.addSub(function(saesInfo){
+									if(saesInfo.length == 0){
+										$("#add_sae_feature_placeholder").style.display = 'block';
+										$("#add_sae_feature_wrapper").style.display = 'none';
+									}
+									else {
+										$("#add_sae_feature_wrapper").style.display = 'block';
+										$("#add_sae_feature_placeholder").style.display = 'none';
+									}
+								});
+							</script>
 						</div>
-						<button onclick="add_observable_token()">Add token</button><br/>
+						<div id="add_observable_feature_div" style="display: none"> 
+							<p id="add_observable_token_template" class="add_observable_token" style="display: none">
+								Token:
+								<input type="text" class="add_observable_token_input"/>
+								 Weight:
+								<input type="text" class="add_observable_token_weight"/>
+								<button onclick="deleteObservableToken(this)">&#10006;</button>
+							</p>
+							<div id="add_observable_tokens">
+								
+							</div>
+							<button onclick="add_observable_token()">Add token</button><br/>
+						</div>
+						<p><button onclick="addFeature()" id="add_feature_button" style="display: none">Add feature</button></p>
 					</div>
-					<p><button onclick="addFeature()" id="add_feature_button" style="display: none">Add feature</button></p>
-				</div>
-				<script type="text/javascript">
-					show_sae_or_observable_form();
-					resetAddFeatureForm();
-				</script>
-			</details>
+					<script type="text/javascript">
+						show_sae_or_observable_form();
+						resetAddFeatureForm();
+					</script>
+				</details>
+			</div>
 			<!-- below is the div for steering vectors -->
 			<div class="small_div">
 				<script type="text/javascript">
