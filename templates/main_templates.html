@@ -339,7 +339,7 @@
 							var newNode = itemTemplate.cloneNode(true);
 							newNode.removeAttribute("id");
 
-							newNode.querySelector('.id').innerHTML = curInfo['id'];
+							newNode.querySelector('.id').value = curInfo['id'];
 							newNode.querySelector('.short_name').innerHTML = curInfo['short_name'];
 							newNode.querySelector('.name').innerHTML = curInfo['name'];
 							newNode.querySelector('.input_layer').innerHTML = curInfo['input_layer'].layer;
