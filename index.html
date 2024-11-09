@@ -140,16 +140,90 @@
 	</div>
 	<!-- end header -->
 
-	{{ main_templates.session_info_div() }}
+	<div id="intro_splash" class="big_div" style="width: max-content; padding: 2%; margin-left: auto; margin-right: auto;">
+		<h1>Welcome to Peek.</h1>
+		<p>New to Peek? <a href="https://github.com/jacobdunefsky/peek/blob/master/docs/walkthrough.md">Then take a look at the walkthrough.</a>
 
-	<div id="main_dashboard_placeholder" class="big_div">
-		<p>Load a model to get started.</p>
+		<div class="small_div" style="padding:2em; padding-top: 0;">
+			<h2>Load a pre-existing session</h2>
+			<p style="display: none; color: red" id="load_session_from_splash_error"></p>
+			<p>Session path: <input type="text" placeholder="Session path" id="load_session_from_splash_path"/></p>
+			<a class="button" id="load_session_from_splash_button" onclick="loadSessionFromSplash()">Load session</a>
+		</div>
+		<script type="text/javascript">
+			async function loadSessionFromSplash(){
+				const errorEle = $("#load_session_from_splash_error");	
+				errorEle.style.display = 'none';
+
+				const loadButton = $("#load_session_from_splash_button");
+				const originalLoadText = loadButton.innerText;
+				loadButton.disabled = true; loadButton.innerText = "Loading...";
+				const path = $("#load_session_from_splash_path").value;
+				const resp = await fetchJson("/session/load", "POST", {'path': path});
+				if(!isOk(resp)){
+					errorEle.innerText = resp.json.error;
+					errorEle.style.display = 'block';
+				}
+
+				loadButton.disabled = false; loadButton.innerText = originalLoadText;
+				if(isOk(resp)){
+					window.location.reload(true);
+				}
+			}
+		</script>
+
+		<div class="small_div" style="padding:2em; padding-top: 0;">
+			<h2>Begin a new session</h2>
+			<p>To begin a new session, load a model.</p>
+			<p style="text-color: red; display: none" id="model_load_splash_error"></p>
+			<p>Model name: <input type="text" value="gpt2" id="model_load_splash_path"/></p>
+			<p><label>Load in half precision: <input type="checkbox" id="model_load_splash_half"></label></p>
+			<a class="button" onclick="loadModelFromSplash()" id="model_load_splash_button">Load model</a>
+			
+			<script type="text/javascript">
+				async function loadModelFromSplash(){
+					$('#model_load_splash_path').disabled = true;
+					$("#model_load_splash_half").disabled = true;
+					$('#model_load_splash_button').disabled = true;
+					const originalLoadButtonText = $('#model_load_splash_button').innerText;
+					$('#model_load_splash_button').innerHTML = "Model loading...";
+
+					const model_path = $('#model_load_splash_path').value;
+					const dtype_str = $("#model_load_splash_half").checked ? 'bfloat16' : null;
+					const modelResp = await fetchJson('/model', "POST", {'name': model_path, 'dtype_str': dtype_str});
+
+					$('#model_load_splash_path').disabled = false;
+					$("#model_load_splash_half").disabled = false;
+
+					$('#model_load_splash_button').disabled = false;
+					$('#model_load_splash_button').innerHTML = originalLoadButtonText;
+					const errorEle = $("#model_load_splash_error");
+					if(!isOk(modelResp)){
+						const error = modelResp.json.error;
+						errorEle.style.display = 'block';
+						errorEle.innerText = "Error: " + error
+					}
+					else {
+						errorEle.style.display = 'none';
+						await getModelInfo();
+					}
+				}
+			</script>
+		</div>
+		
 	</div>
+
+
+	<!-- <div id="main_dashboard_placeholder" class="big_div">
+		<p>Load a model to get started.</p>
+	</div> -->
 	<div id="main_dashboard_elements" style="display: none">
+	{{ main_templates.session_info_div() }}
 	<script type="text/javascript">
 		window.modelInfo.addSub(function(modelInfo){
 			if(modelInfo != null){
-				$("#main_dashboard_placeholder").style.display = 'none';
+				//$("#main_dashboard_placeholder").style.display = 'none';
+				$("#intro_splash").style.display = 'none';
 				$("#main_dashboard_elements").style.display = 'block';
 				$("#header_right_column").style.display = 'flex';
 			}
