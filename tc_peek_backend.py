@@ -1032,9 +1032,9 @@ class SAEInfo:
 		return json_filename
 
 	@classmethod
-	def _try_load_from_upstream(cls, upstream, load_tensors=True):
+	def _try_load_from_upstream(cls, upstream, load_tensors=True, basepath=None):
 		# get SAEInfo dict
-		sae_info_json_path = upstream.get_path()
+		sae_info_json_path = upstream.get_path(basepath=basepath)
 		if sae_info_json_path is None: return None
 		with open(sae_info_json_path, "r") as fp:
 			d = json.load(fp)
@@ -1043,7 +1043,7 @@ class SAEInfo:
 		sae_filename = d.get("sae_filename", None)
 		if sae_filename is None: return None
 		sae_json_datapath = upstream.get_sibling_datapath(sae_filename)
-		sae_json_path = sae_json_datapath.get_path()
+		sae_json_path = sae_json_datapath.get_path(basepath=basepath)
 		if sae_json_path is None: return None
 
 		# get tensors
@@ -1053,7 +1053,7 @@ class SAEInfo:
 			tensors_filename = sae_cfg_dict.get('tensors_filename', None)
 			if tensors_filename is None: return None
 			sae_tensors_datapath = sae_json_datapath.get_sibling_datapath(tensors_filename)
-			sae_tensors_path = sae_tensors_datapath.get_path()
+			sae_tensors_path = sae_tensors_datapath.get_path(basepath=basepath)
 			if sae_tensors_path is None: return None
 
 		# at this point, we've confirmed that every file that needs to 
@@ -1068,10 +1068,10 @@ class SAEInfo:
 		except:
 			return None
 
-	def load_from_upstreams(self, load_tensors=True):
+	def load_from_upstreams(self, load_tensors=True, basepath=None):
 		for upstream in self.upstreams:
 			try:
-				retval = type(self)._try_load_from_upstream(upstream, load_tensors=load_tensors)
+				retval = type(self)._try_load_from_upstream(upstream, load_tensors=load_tensors, basepath=basepath)
 			except Exception as e:
 				raise e
 				retval = None
@@ -1179,9 +1179,11 @@ class DataPath:
 			relative_path = d.get('relative_path', None)
 		)
 
-	def get_path(self):
+	def get_path(self, basepath=None):
 		if self.path_type == DataPathType.RELATIVE:
-			if os.path.exists(self.relative_path): return self.relative_path
+			fullpath = self.relative_path
+			if basepath is not None: fullpath = os.path.join(basepath, fullpath)
+			if os.path.exists(fullpath): return fullpath 
 			else: return None
 
 		if self.path_type == DataPathType.ABSOLUTE:
@@ -2071,7 +2073,9 @@ class Session:
 			for idx_str, sae_info_json_filename in d['sae_info_json_filenames'].items():
 				idx = int(idx_str)
 				sae_info = SAEInfo.load(os.path.join(dirname, sae_info_json_filename), load_tensors=False, in_zipfile=in_zipfile)
-				if load_tensors: sae_info = sae_info.load_from_upstreams(load_tensors=load_tensors)
+				if load_tensors:
+					basepath = dirname
+					sae_info = sae_info.load_from_upstreams(load_tensors=load_tensors, basepath=basepath)
 
 				self.sae_list.dict[idx] = sae_info
 				if idx >= self.sae_list.cur_id:
@@ -2190,18 +2194,23 @@ class Session:
 		if os.path.isdir(path):
 			retlist = []
 			for filename in os.listdir(path):
-				fullpath = os.path.join(path, filename, sae_info_json_filename)
+				basepath = os.path.join(path, filename)
+				fullpath = os.path.join(basepath, sae_info_json_filename)
 				try:
 					sae_info = SAEInfo.load(fullpath, load_tensors=False)
-					sae_info = sae_info.load_from_upstreams(load_tensors=True)
+					sae_info = sae_info.load_from_upstreams(load_tensors=True, basepath=basepath)
 					retlist.append(self.sae_list.add(sae_info))
 				except Exception as e:
-					 print(e)
+					print(filename)
+					print(e)
 			return retlist
 		else:
 			try:
+				fullpath = path
+				basepath = os.path.dirname(fullpath)
 				sae_info = SAEInfo.load(fullpath, load_tensors=False)
-				sae_info = sae_info.load_from_upstreams(load_tensors=True)
+				print(sae_info.serialize())
+				sae_info = sae_info.load_from_upstreams(load_tensors=True, basepath=basepath)
 				return self.sae_list.add(sae_info)
 			except:
 				raise Exception(f"Error loading SAE from \"{path}\". Perhaps this is an invalid file?")
