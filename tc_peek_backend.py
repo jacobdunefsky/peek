@@ -1511,12 +1511,14 @@ class Prompt:
 
 			# update computational paths
 			for idx, comp_path in self.comp_paths.dict.items():
+				if comp_path.is_outdated: continue
 				for node_idx, node in enumerate(comp_path.nodes):
 					prev_node = comp_path.nodes[node_idx-1] if node_idx > 0 else None
 					comp_path.nodes[node_idx] = self.populate_attrib_info(node, prev_node)
-			for node_idx, node in enumerate(self.cur_comp_path.nodes):
-				prev_node = self.cur_comp_path.nodes[node_idx-1] if node_idx > 0 else None
-				self.cur_comp_path.nodes[node_idx] = self.populate_attrib_info(node, prev_node)
+			if not self.cur_comp_path.is_outdated:
+				for node_idx, node in enumerate(self.cur_comp_path.nodes):
+					prev_node = self.cur_comp_path.nodes[node_idx-1] if node_idx > 0 else None
+					self.cur_comp_path.nodes[node_idx] = self.populate_attrib_info(node, prev_node)
 
 	@no_grad()
 	def get_feature_activs(self, feature : FeatureInfo):
