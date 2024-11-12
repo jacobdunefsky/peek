@@ -42,9 +42,11 @@ This will launch the Peek server, which will listen on port 46877.
 
 Then, in your favorite web browser, navigate to `localhost:46877` to access Peek.
 
-# Detailed walkthrough
+# Documentation
 
-A detailed walkthrough of how to use all of Peek's features is provided in [walkthrough.md](docs/walkthrough.md).
+A detailed walkthrough of how to use Peek's main features is provided in [walkthrough.md](docs/walkthrough.md).
+
+A tutorial on how to perform feature steering with Peek is provided in [steering\_tutorial.md](docs/steering_tutorial.md).
 
 # Contact
 
